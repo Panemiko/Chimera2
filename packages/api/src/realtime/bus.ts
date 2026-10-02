@@ -1,21 +1,31 @@
 import { EventEmitter } from "events";
 
-export type RoomMessage = {
-  id: string;
+export type RoomEventData = {
+  id: number;
   roomId: string;
-  text: string;
-  author: string;
-  sentAt: string;
+  actorId: string | null;
+  type: string;
+  secret: boolean;
+  payload: unknown;
+  createdAt: Date;
 };
 
-function roomEvent(roomId: string) {
-  return `message:${roomId}`;
+export function roomChannel(roomId: string) {
+  return `room:${roomId}`;
 }
 
 export const roomBus = new EventEmitter();
 
 roomBus.setMaxListeners(0);
 
-export function publishRoomMessage(message: RoomMessage) {
-  roomBus.emit(roomEvent(message.roomId), message);
+export function publishRoomEvent(event: RoomEventData) {
+  roomBus.emit(roomChannel(event.roomId), event);
+}
+
+export function canSeeEvent(
+  role: "master" | "player",
+  userId: string,
+  event: Pick<RoomEventData, "secret" | "actorId">,
+) {
+  return role === "master" || !event.secret || event.actorId === userId;
 }

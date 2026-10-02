@@ -1,0 +1,10 @@
+/* Hide Excalidraw chrome replaced by our own menu. The hamburger trigger
+   and the library sidebar trigger have no UIOptions toggle, so they are
+   hidden here. Toolbar, zoom controls and undo/redo stay visible. */
+.excalidraw .main-menu-trigger {
+  display: none !important;
+}
+
+.excalidraw .sidebar-trigger {
+  display: none !important;
+}

@@ -9,10 +9,13 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
+    "@3d-dice/dice-parser-interface": "^0.2.1",
+    "@3d-dice/dice-roller-parser": "^0.2.6",
     "@chimera2/auth": "workspace:*",
     "@chimera2/db": "workspace:*",
     "@trpc/client": "catalog:",
     "@trpc/server": "catalog:",
+    "drizzle-orm": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
