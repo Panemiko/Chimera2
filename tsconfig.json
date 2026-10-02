@@ -1,0 +1,3 @@
+{
+  "extends": "@chimera2/config/tsconfig.base.json"
+}

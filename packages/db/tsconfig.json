@@ -1,0 +1,6 @@
+{
+  "extends": "@chimera2/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  }
+}
