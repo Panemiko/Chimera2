@@ -1,11 +1,13 @@
 import { appRouter, type AppRouter } from "@chimera2/api/routers/index";
 import fastifyCors from "@fastify/cors";
 import { fastifyTRPCPlugin, type FastifyTRPCPluginOptions } from "@trpc/server/adapters/fastify";
+import { applyWSSHandler } from "@trpc/server/adapters/ws";
 import { initLogger } from "evlog";
 import { createAuthMiddleware, type BetterAuthInstance } from "evlog/better-auth";
 import { evlog, useLogger } from "evlog/fastify";
 import { createFsDrain } from "evlog/fs";
 import Fastify from "fastify";
+import { WebSocketServer } from "ws";
 
 import { createContext } from "./context";
 import { ENV } from "./env.server";
@@ -84,10 +86,33 @@ fastify.get("/", async () => {
   return "OK";
 });
 
-fastify.listen({ port: 3000, host: "0.0.0.0" }, (err) => {
-  if (err) {
-    fastify.log.error(err);
-    process.exit(1);
-  }
-  console.log("Server running on port 3000");
+await fastify.listen({ port: 3000, host: "0.0.0.0" });
+console.log("Server running on port 3000");
+
+// WebSocket transport for tRPC subscriptions, sharing the same HTTP
+// server (and port) as the Fastify app. Queries and mutations keep
+// using HTTP; only subscriptions go through here.
+const wss = new WebSocketServer({ server: fastify.server });
+const wssHandler = applyWSSHandler({
+  wss,
+  router: appRouter,
+  createContext,
+  keepAlive: {
+    enabled: true,
+    pingMs: 30000,
+    pongWaitMs: 5000,
+  },
+});
+
+wss.on("connection", (ws) => {
+  console.log(`++ Connection (${wss.clients.size})`);
+  ws.once("close", () => {
+    console.log(`-- Connection (${wss.clients.size})`);
+  });
+});
+
+process.on("SIGTERM", () => {
+  console.log("SIGTERM");
+  wssHandler.broadcastReconnectNotification();
+  wss.close();
 });

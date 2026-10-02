@@ -23,11 +23,13 @@
     "fastify": "^5.12.3",
     "libsql": "catalog:",
     "varlock": "catalog:",
+    "ws": "^8.22.0",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@chimera2/config": "workspace:*",
     "@types/bun": "catalog:",
+    "@types/ws": "^8.18.2",
     "tsdown": "^0.23.0",
     "typescript": "catalog:"
   }

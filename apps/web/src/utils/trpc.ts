@@ -1,6 +1,6 @@
 import type { AppRouter } from "@chimera2/api/routers/index";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
-import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { createTRPCClient, createWSClient, httpBatchLink, splitLink, wsLink } from "@trpc/client";
 import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { toast } from "sonner";
 
@@ -21,6 +21,10 @@ function getServerUrl(url: string) {
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }
 
+function toWsUrl(httpUrl: string) {
+  return httpUrl.replace(/^http/, "ws");
+}
+
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
     onError: (error, query) => {
@@ -36,17 +40,35 @@ export const queryClient = new QueryClient({
   }),
 });
 
+const httpLink = httpBatchLink({
+  url: `${getServerUrl(ENV.VITE_SERVER_URL)}/trpc`,
+  fetch(url, options) {
+    return fetch(url, {
+      ...options,
+      credentials: "include",
+    });
+  },
+});
+
+// WebSocket only exists in the browser. The server bundle (SSR) keeps
+// HTTP-only links so module evaluation never touches `WebSocket`.
+const wsClient =
+  typeof window === "undefined"
+    ? undefined
+    : createWSClient({
+        url: `${toWsUrl(getServerUrl(ENV.VITE_SERVER_URL))}/trpc`,
+        retryDelayMs: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+      });
+
 export const trpcClient = createTRPCClient<AppRouter>({
   links: [
-    httpBatchLink({
-      url: `${getServerUrl(ENV.VITE_SERVER_URL)}/trpc`,
-      fetch(url, options) {
-        return fetch(url, {
-          ...options,
-          credentials: "include",
-        });
-      },
-    }),
+    wsClient
+      ? splitLink({
+          condition: (op) => op.type === "subscription",
+          true: wsLink({ client: wsClient }),
+          false: httpLink,
+        })
+      : httpLink,
   ],
 });
 

@@ -1,11 +1,17 @@
 import type { Context as ApiContext } from "@chimera2/api/context";
-import type { CreateFastifyContextOptions } from "@trpc/server/adapters/fastify";
 import { fromNodeHeaders } from "better-auth/node";
 
 import { db } from "./services";
 import { auth } from "./services";
 
-export async function createContext({ req }: CreateFastifyContextOptions): Promise<ApiContext> {
+type HeadersLike = {
+  headers: Record<string, string | string[] | undefined>;
+};
+
+// Fastify passes a FastifyRequest, the WS adapter passes a Node
+// IncomingMessage. Both carry `.headers`, which is all we need to
+// resolve the Better-Auth session, so one function serves both.
+export async function createContext({ req }: { req: HeadersLike }): Promise<ApiContext> {
   const session = await auth.api.getSession({
     headers: fromNodeHeaders(req.headers),
   });
