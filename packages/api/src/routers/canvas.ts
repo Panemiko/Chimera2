@@ -95,6 +95,8 @@ export const canvasRouter = router({
         roomId: z.string().min(1),
         x: z.number().finite(),
         y: z.number().finite(),
+        tool: z.enum(["pointer", "laser"]).default("pointer"),
+        button: z.enum(["up", "down"]).default("up"),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -106,6 +108,8 @@ export const canvasRouter = router({
         userColor: identity.color,
         x: input.x,
         y: input.y,
+        tool: input.tool,
+        button: input.button,
       };
       canvasBus.emit(canvasChannel(input.roomId), { type: "pointer", message });
       return { ok: true };

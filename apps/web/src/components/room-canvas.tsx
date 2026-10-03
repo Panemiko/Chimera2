@@ -1,5 +1,6 @@
 import "@excalidraw/excalidraw/index.css";
 import "./room-canvas.css";
+import "./excalidraw-theme.css";
 
 import {
   DropdownMenu,
@@ -10,12 +11,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@chimera2/ui/components/dropdown-menu";
+import { Button } from "@chimera2/ui/components/button";
+import { Input } from "@chimera2/ui/components/input";
 import {
   CaptureUpdateAction,
   Excalidraw,
   getSceneVersion,
   reconcileElements,
   restoreElements,
+  sceneCoordsToViewportCoords,
   THEME,
   viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
@@ -43,6 +47,7 @@ export type RoomMenuInfo = {
 export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
   const { resolvedTheme } = useTheme();
   const apiRef = useRef<RoomCanvasApi | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneQuery = useQuery(trpc.canvas.getScene.queryOptions({ roomId: room.id }));
   const pushScene = useMutation(trpc.canvas.pushScene.mutationOptions());
   const pushPointer = useMutation(trpc.canvas.pushPointer.mutationOptions());
@@ -50,20 +55,35 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
   const pointerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSentVersion = useRef<number | null>(null);
   const applyingRemote = useRef(false);
-  const collaborators = useRef(new Map<string, { username: string; color: string; x: number; y: number; tx: number; ty: number; at: number }>());
+  const collaborators = useRef(
+    new Map<string, { username: string; color: string; x: number; y: number; tx: number; ty: number; at: number; tool: "pointer" | "laser"; button: "up" | "down" }>(),
+  );
   const smoothTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [overlays, setOverlays] = useState<
+    { id: string; username: string; color: string; x: number; y: number }[]
+  >([]);
   const [initialElements, setInitialElements] = useState<unknown[] | null>(null);
+  const [initialFiles, setInitialFiles] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
-    if (sceneQuery.data && initialElements === null) {
+    if (sceneQuery.data && initialElements === null && initialFiles === null) {
       try {
-        const parsed = JSON.parse(sceneQuery.data.scene) as { elements?: unknown };
+        const parsed = JSON.parse(sceneQuery.data.scene) as {
+          elements?: unknown;
+          files?: unknown;
+        };
         setInitialElements(Array.isArray(parsed.elements) ? parsed.elements : []);
+        setInitialFiles(
+          parsed.files && typeof parsed.files === "object" && !Array.isArray(parsed.files)
+            ? (parsed.files as Record<string, unknown>)
+            : {},
+        );
       } catch {
         setInitialElements([]);
+        setInitialFiles({});
       }
     }
-  }, [sceneQuery.data, initialElements]);
+  }, [sceneQuery.data, initialElements, initialFiles]);
 
   function queuePush() {
     if (pushTimer.current) return;
@@ -96,11 +116,20 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
       { roomId: room.id },
       {
         onData: (envelope) => {
-          const remote = envelope.data;
+          const remote = envelope.data as { elements?: unknown; files?: unknown };
           const api = apiRef.current;
           if (!api || !Array.isArray(remote.elements)) return;
           try {
             applyingRemote.current = true;
+            if (remote.files && typeof remote.files === "object") {
+              const list = Object.values(remote.files as Record<string, unknown>).filter(
+                (f): f is { id: string; dataURL: string } =>
+                  !!f && typeof f === "object" && typeof (f as { id?: unknown }).id === "string",
+              );
+              if (list.length > 0) {
+                api.addFiles(list as never);
+              }
+            }
             const local = api.getSceneElementsIncludingDeleted();
             const reconciled = reconcileElements(
               local as never,
@@ -136,6 +165,8 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
             tx: pointer.x,
             ty: pointer.y,
             at: Date.now(),
+            tool: pointer.tool ?? "pointer",
+            button: pointer.button ?? "up",
           });
           startSmoothing();
         },
@@ -152,11 +183,26 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
           clearInterval(smoothTimer.current);
           smoothTimer.current = null;
         }
+        setOverlays([]);
         return;
       }
       const cutoff = Date.now() - 5000;
       let moved = false;
-      const next = new Map<string, { username: string; color: { background: string; stroke: string }; pointer: { x: number; y: number } }>();
+      const next = new Map<
+        string,
+        {
+          username: string;
+          id: string;
+          button: "up" | "down";
+          pointer: {
+            x: number;
+            y: number;
+            tool: "pointer" | "laser";
+            laserColor: string;
+            renderCursor: false;
+          };
+        }
+      >();
       for (const [id, c] of collaborators.current) {
         if (c.at < cutoff) {
           collaborators.current.delete(id);
@@ -176,18 +222,75 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
         }
         next.set(id, {
           username: c.username,
-          color: { background: c.color, stroke: c.color },
-          pointer: { x: c.x, y: c.y },
+          id,
+          button: c.button,
+          pointer: { x: c.x, y: c.y, tool: c.tool, laserColor: c.color, renderCursor: false },
         });
       }
-      if (moved) {
+      if (moved || next.size > 0) {
         try {
           api.updateScene({ collaborators: next });
         } catch {
           // Presence is decorative.
         }
       }
+      try {
+        const appState = api.getAppState();
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const items: { id: string; username: string; color: string; x: number; y: number }[] = [];
+        for (const [id, c] of collaborators.current) {
+          const vp = sceneCoordsToViewportCoords(
+            { sceneX: c.x, sceneY: c.y },
+            {
+              zoom: appState.zoom as never,
+              offsetLeft: rect.left,
+              offsetTop: rect.top,
+              scrollX: appState.scrollX,
+              scrollY: appState.scrollY,
+            },
+          );
+          items.push({
+            id,
+            username: c.username,
+            color: c.color,
+            x: vp.x - rect.left,
+            y: vp.y - rect.top,
+          });
+        }
+        setOverlays(items);
+      } catch {
+        // Overlay is decorative.
+      }
     }, 33);
+  }
+
+  function sendPointer(clientX: number, clientY: number, rect: DOMRect, pressed: boolean) {
+    const api = apiRef.current;
+    if (!api) return;
+    try {
+      const appState = api.getAppState();
+      const scene = viewportCoordsToSceneCoords(
+        { clientX, clientY },
+        {
+          zoom: appState.zoom as never,
+          offsetLeft: rect.left,
+          offsetTop: rect.top,
+          scrollX: appState.scrollX,
+          scrollY: appState.scrollY,
+        },
+      );
+      const tool = appState.activeTool?.type === "laser" ? "laser" : "pointer";
+      pushPointer.mutate({
+        roomId: room.id,
+        x: scene.x,
+        y: scene.y,
+        tool,
+        button: pressed ? "down" : "up",
+      });
+    } catch {
+      // Best effort presence.
+    }
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLDivElement>) {
@@ -195,37 +298,39 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
     const rect = e.currentTarget.getBoundingClientRect();
     const clientX = e.clientX;
     const clientY = e.clientY;
+    const pressed = e.buttons > 0;
     pointerTimer.current = setTimeout(() => {
       pointerTimer.current = null;
-      const api = apiRef.current;
-      if (!api) return;
-      try {
-        const appState = api.getAppState();
-        const scene = viewportCoordsToSceneCoords(
-          { clientX, clientY },
-          {
-            zoom: appState.zoom as never,
-            offsetLeft: rect.left,
-            offsetTop: rect.top,
-            scrollX: appState.scrollX,
-            scrollY: appState.scrollY,
-          },
-        );
-        pushPointer.mutate({ roomId: room.id, x: scene.x, y: scene.y });
-      } catch {
-        // Best effort presence.
-      }
-    }, 150);
+      sendPointer(clientX, clientY, rect, pressed);
+    }, 50);
   }
 
-  if (sceneQuery.isLoading || initialElements === null) {
+  function handlePointerButton(e: React.PointerEvent<HTMLDivElement>, pressed: boolean) {
+    if (pointerTimer.current) {
+      clearTimeout(pointerTimer.current);
+      pointerTimer.current = null;
+    }
+    sendPointer(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), pressed);
+  }
+
+  if (sceneQuery.isLoading || initialElements === null || initialFiles === null) {
     return <div className="h-full w-full" />;
   }
 
+  const dark = resolvedTheme === "dark";
+  const dot = dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.12)";
+
   return (
     <div
-      className="relative h-full w-full"
+      ref={containerRef}
+      className="room-canvas relative h-full w-full"
+      style={{
+        backgroundImage: `radial-gradient(circle, ${dot} 1.2px, transparent 1.2px)`,
+        backgroundSize: "24px 24px",
+      }}
       onPointerMove={handlePointerMove}
+      onPointerDown={(e) => handlePointerButton(e, true)}
+      onPointerUp={(e) => handlePointerButton(e, false)}
       onPointerDownCapture={(e) => {
         // Toolbar clicks keep the current focus so the main toolbar
         // can drive the private canvas. Canvas clicks take focus back.
@@ -236,13 +341,15 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
     >
       <Excalidraw
         theme={resolvedTheme === "dark" ? THEME.DARK : THEME.LIGHT}
+        validateEmbeddable={true}
         renderTopRightUI={() => null}
         excalidrawAPI={(api) => {
           apiRef.current = api as unknown as RoomCanvasApi;
         }}
         initialData={{
           elements: restoreElements(initialElements as never, null),
-          appState: { gridSize: 20 },
+          files: initialFiles as never,
+          appState: { viewBackgroundColor: "transparent" },
         }}
         onChange={(elements, appState, files) => {
           if (applyingRemote.current) return;
@@ -262,6 +369,45 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
           },
         }}
       />
+      <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
+        {overlays.map((o) => (
+          <div
+            key={o.id}
+            className="absolute left-0 top-0"
+            style={{ transform: `translate(${o.x}px, ${o.y}px)` }}
+          >
+            <svg width="11" height="14" viewBox="0 0 11 14" fill="none">
+              <path
+                d="M0 0 L0 14 L4 9 L11 8 Z"
+                fill={o.color}
+                stroke="white"
+                strokeWidth="2"
+                strokeLinejoin="round"
+                style={{ paintOrder: "stroke" }}
+              />
+            </svg>
+            <span
+              style={{
+                position: "absolute",
+                left: "5px",
+                top: "16px",
+                backgroundColor: o.color,
+                color: "#1e1e1e",
+                border: "1px solid white",
+                borderRadius: "8px",
+                padding: "2px 7px",
+                fontSize: "12px",
+                fontWeight: 600,
+                fontFamily: "sans-serif",
+                lineHeight: "16px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {o.username}
+            </span>
+          </div>
+        ))}
+      </div>
       <RoomMenu room={room} />
     </div>
   );
@@ -270,8 +416,14 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
 type RoomCanvasApi = {
   getSceneElementsIncludingDeleted: () => { version: number }[];
   getSceneElements: () => { version: number }[];
-  getAppState: () => { scrollX: number; scrollY: number; zoom: { value: number } };
+  getAppState: () => {
+    scrollX: number;
+    scrollY: number;
+    zoom: { value: number };
+    activeTool?: { type: string };
+  };
   getFiles: () => Record<string, unknown>;
+  addFiles: (files: unknown[]) => void;
   updateScene: (scene: Record<string, unknown>) => void;
 };
 
@@ -327,17 +479,16 @@ function RoomMenu({ room }: { room: RoomMenuInfo }) {
     <div className="absolute left-3 top-3 z-10 flex items-center gap-3">
       <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <DropdownMenu>
-        <DropdownMenuTrigger
-          aria-label="Room menu"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-input bg-background text-sm font-medium shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground"
-        >
-          <Menu className="h-4 w-4" />
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="icon" aria-label="Room menu">
+            <Menu className="size-4" />
+          </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuGroup>
             <DropdownMenuLabel>
               <div className="font-semibold">{room.name}</div>
-              <div className="font-normal opacity-60">
+              <div className="font-normal text-muted-foreground">
                 {room.role === "master" ? "Master" : "Player"}
               </div>
             </DropdownMenuLabel>
@@ -350,14 +501,13 @@ function RoomMenu({ room }: { room: RoomMenuInfo }) {
                 {copied ? "Invite copied" : "Copy invite link"}
               </DropdownMenuItem>
               <div className="px-2 py-1.5">
-                <div className="mb-1 text-xs opacity-60">Invite link</div>
-                <input
+                <div className="mb-1 text-xs text-muted-foreground">Invite link</div>
+                <Input
                   ref={inviteInputRef}
                   readOnly
                   value={inviteUrl}
                   onFocus={(e) => e.currentTarget.select()}
                   onClick={(e) => e.currentTarget.select()}
-                  className="w-full rounded border border-input bg-background px-2 py-1 text-xs"
                 />
               </div>
               <DropdownMenuSeparator />
@@ -379,7 +529,7 @@ function RoomMenu({ room }: { room: RoomMenuInfo }) {
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuLabel className="font-normal">
-              <div className="mb-2 opacity-60">Profile color</div>
+              <div className="mb-2 text-muted-foreground">Profile color</div>
               <div className="flex items-center gap-1.5">
                 {USER_PALETTE.map((swatch) => (
                   <button
@@ -389,7 +539,7 @@ function RoomMenu({ room }: { room: RoomMenuInfo }) {
                     style={{ backgroundColor: swatch }}
                     onClick={() => setColor.mutate({ color: swatch })}
                   >
-                    {color === swatch && <Check className="h-3.5 w-3.5 text-white" />}
+                    {color === swatch && <Check className="h-3.5 w-3.5 text-primary-foreground" />}
                   </button>
                 ))}
                 <label
@@ -409,7 +559,7 @@ function RoomMenu({ room }: { room: RoomMenuInfo }) {
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            <DropdownMenuLabel className="font-normal opacity-60">
+            <DropdownMenuLabel className="font-normal text-muted-foreground">
               {session?.user.email}
             </DropdownMenuLabel>
           </DropdownMenuGroup>
@@ -421,15 +571,15 @@ function RoomMenu({ room }: { room: RoomMenuInfo }) {
       </DropdownMenu>
       <div className="flex items-center gap-1">
         <span
-          className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white"
+          className="flex size-8 items-center justify-center rounded-full text-xs font-bold text-primary-foreground"
           style={{ backgroundColor: color }}
           title={name}
         >
           {name.charAt(0).toUpperCase()}
         </span>
-        <div className="panel-solid rounded px-2 py-1 text-xs leading-tight shadow-md">
-          <div className="font-semibold">{name}</div>
-          <div className="opacity-60">{room.role === "master" ? "Master" : "Player"}</div>
+        <div className="px-1 py-0.5 text-xs leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+          <div className="font-semibold text-foreground">{name}</div>
+          <div className="text-muted-foreground">{room.role === "master" ? "Master" : "Player"}</div>
         </div>
       </div>
     </div>

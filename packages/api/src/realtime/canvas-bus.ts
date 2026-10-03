@@ -12,6 +12,8 @@ export type CanvasPointerMessage = {
   userColor: string;
   x: number;
   y: number;
+  tool: "pointer" | "laser";
+  button: "up" | "down";
 };
 
 export type CanvasPresence = {

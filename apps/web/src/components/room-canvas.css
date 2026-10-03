@@ -1,6 +1,8 @@
 /* Hide Excalidraw chrome replaced by our own menu. The hamburger trigger
    and the library sidebar trigger have no UIOptions toggle, so they are
-   hidden here. Toolbar, zoom controls and undo/redo stay visible. */
+   hidden here. The zoom controls and undo/redo sit under the history
+   overlay in the bottom-left, so they are hidden too. Keyboard still
+   works: ctrl+wheel zooms, ctrl+z undoes. */
 .excalidraw .main-menu-trigger {
   display: none !important;
 }
@@ -9,13 +11,31 @@
   display: none !important;
 }
 
-/* Solid overlay background. Plain rgb under a .dark selector paints
-   identically in every browser, unlike the token chain that one of the
-   browsers fails to resolve. */
-.panel-solid {
-  background-color: #ffffff;
+.room-canvas .zoom-actions {
+  display: none !important;
 }
 
-.dark .panel-solid {
-  background-color: #242424;
+.room-canvas .undo-redo-buttons {
+  display: none !important;
+}
+
+/* Presence cursors stay active via the collaborators map. The avatar stack
+   in the top-right duplicates the Players roster, so hide the list only. */
+.room-canvas .excalidraw .UserList__wrapper,
+.room-canvas .excalidraw .UserList-Wrapper {
+  display: none !important;
+}
+
+/* The selected-shape properties panel (App-menu__left) sits in the top-left
+   FixedSideContainer, same corner as our own RoomMenu. Push it down so it
+   clears the room menu instead of rendering underneath it, but cap its
+   height so it scrolls internally instead of running into the history
+   overlay at the bottom-left. The trailing 12px keeps a visible gap
+   between the panel and the history card. */
+.room-canvas .excalidraw .App-menu_top__left {
+  margin-top: 24px;
+}
+
+.room-canvas .excalidraw .App-menu__left {
+  max-height: calc(100vh - 24px - 334px - 12px) !important;
 }

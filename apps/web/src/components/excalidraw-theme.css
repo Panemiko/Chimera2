@@ -1,0 +1,124 @@
+/* Experiment: bridge app tokens from @chimera2/ui globals.css into Excalidraw.
+   Scoped to .room-canvas so the private sheet canvas keeps native styling.
+   Load order matters: room-canvas.tsx imports excalidraw index.css first,
+   then this file, so these values win on tied specificity.
+   Light and dark both work because var(--popover) etc. already flip under .dark. */
+
+.room-canvas .excalidraw {
+  --ui-font: "Inter Variable", system-ui, sans-serif;
+
+  --border-radius-lg: var(--radius);
+  --border-radius-md: calc(var(--radius) - 2px);
+
+  /* Surfaces: toolbar island, sidebar, popups */
+  --island-bg-color: var(--popover);
+  --popup-bg-color: var(--popover);
+  --popup-secondary-bg-color: var(--muted);
+  --popup-text-color: var(--popover-foreground);
+  --popup-text-inverted-color: var(--popover);
+  --sidebar-bg-color: var(--popover);
+  --sidebar-border-color: var(--border);
+  --default-bg-color: var(--background);
+  --overlay-bg-color: color-mix(in oklch, var(--background) 88%, transparent);
+
+  /* Inputs inside the properties panel */
+  --input-bg-color: var(--background);
+  --input-border-color: var(--input);
+  --input-hover-bg-color: var(--muted);
+  --input-label-color: var(--muted-foreground);
+
+  /* Buttons and hover states */
+  --button-gray-1: var(--muted);
+  --button-gray-2: var(--accent);
+  --button-gray-3: var(--border);
+  --button-hover-bg: var(--accent);
+  --button-active-bg: var(--accent);
+  --button-active-border: var(--ring);
+  --button-special-active-bg-color: var(--accent);
+  --default-border-color: var(--border);
+  --dialog-border-color: var(--border);
+
+  /* Brand color: replace Excalidraw violet with app primary */
+  --color-primary: var(--primary);
+  --color-primary-darker: var(--primary);
+  --color-primary-darkest: var(--primary);
+  --color-primary-hover: var(--primary);
+  --color-primary-light: var(--accent);
+  --color-primary-light-darker: var(--accent);
+  --color-brand-hover: var(--primary);
+  --color-brand-active: var(--primary);
+  --color-surface-primary-container: var(--accent);
+  --color-on-primary-container: var(--accent-foreground);
+  --color-promo: var(--primary);
+  --color-logo-icon: var(--primary);
+
+  /* Text and icons */
+  --color-on-surface: var(--foreground);
+  --text-primary-color: var(--foreground);
+  --icon-fill-color: var(--foreground);
+  --icon-green-fill-color: var(--primary);
+  --keybinding-color: var(--muted-foreground);
+  --link-color: var(--primary);
+  --focus-highlight-color: var(--ring);
+  --select-highlight-color: var(--ring);
+  --color-selection: var(--primary);
+
+  /* Surface scale used by hover rows and dropdowns */
+  --color-surface-high: var(--accent);
+  --color-surface-mid: var(--muted);
+  --color-surface-low: var(--muted);
+  --color-surface-lowest: var(--popover);
+
+  /* Destructive maps to app destructive */
+  --color-danger: var(--destructive);
+  --color-danger-darker: var(--destructive);
+  --color-danger-darkest: var(--destructive);
+
+  --scrollbar-thumb: var(--border);
+  --scrollbar-thumb-hover: var(--muted-foreground);
+
+  --shadow-island:
+    0 1px 2px 0 rgb(0 0 0 / 0.06),
+    0 1px 3px 0 rgb(0 0 0 / 0.1);
+}
+
+/* Toolbar island: card surface with app border, no heavy Excalidraw shadow */
+.room-canvas .excalidraw .Island {
+  border: 1px solid var(--border);
+  box-shadow:
+    0 1px 2px 0 rgb(0 0 0 / 0.06),
+    0 1px 3px 0 rgb(0 0 0 / 0.1);
+}
+
+/* Active tool reads as selected: accent fill, foreground icon */
+.room-canvas .excalidraw .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon,
+.room-canvas .excalidraw .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon {
+  background: var(--accent);
+  border: 1px solid var(--ring);
+  --icon-fill-color: var(--accent-foreground);
+  --keybinding-color: var(--accent-foreground);
+}
+
+/* Properties sidebar: popover surface, app text, heading font */
+.room-canvas .excalidraw .sidebar,
+.room-canvas .excalidraw .default-sidebar {
+  background-color: var(--popover);
+  color: var(--popover-foreground);
+  border-left: 1px solid var(--border);
+  font-family: "Inter Variable", system-ui, sans-serif;
+}
+
+.room-canvas .excalidraw .panelColumn h3,
+.room-canvas .excalidraw .panelColumn legend {
+  font-family: "Montserrat Variable", sans-serif;
+  color: var(--foreground);
+}
+
+.room-canvas .excalidraw .panelColumn .control-label,
+.room-canvas .excalidraw .panelColumn fieldset {
+  border-color: var(--border);
+}
+
+.room-canvas .excalidraw .excalidraw-tooltip {
+  --ui-font: "Inter Variable", system-ui, sans-serif;
+}

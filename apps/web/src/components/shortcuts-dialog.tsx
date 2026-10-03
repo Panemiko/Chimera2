@@ -1,6 +1,6 @@
 import {
   Dialog,
-  DialogPopup,
+  DialogContent,
   DialogTitle,
 } from "@chimera2/ui/components/dialog";
 
@@ -15,7 +15,7 @@ export default function ShortcutsDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={(open) => onOpenChange(open)}>
-      <DialogPopup>
+      <DialogContent>
         <DialogTitle className="mb-3">Keyboard shortcuts</DialogTitle>
         <ul className="space-y-2">
           {APP_SHORTCUTS.map((s) => (
@@ -24,11 +24,11 @@ export default function ShortcutsDialog({
                 {s.key}
               </kbd>
               <span>{s.action}</span>
-              <span className="ml-auto text-xs opacity-50">{s.hint}</span>
+              <span className="ml-auto text-xs text-muted-foreground">{s.hint}</span>
             </li>
           ))}
         </ul>
-      </DialogPopup>
+      </DialogContent>
     </Dialog>
   );
 }

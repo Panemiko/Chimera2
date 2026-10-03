@@ -8,11 +8,17 @@ import {
 } from "@chimera2/db/schema/characters";
 import { roomMember } from "@chimera2/db/schema/rooms";
 import { TRPCError } from "@trpc/server";
+import { tracked } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
+import { on } from "events";
 import { z } from "zod";
 
 import { protectedProcedure, router } from "../index";
 import { CHARACTER_TEMPLATE_ID, DEFAULT_TEMPLATE } from "../characters/template";
+import {
+  canvasBus,
+  type CanvasSceneMessage,
+} from "../realtime/canvas-bus";
 
 async function getMembership(db: Database, roomId: string, userId: string) {
   const [membership] = await db
@@ -30,6 +36,23 @@ const sheetData = z.record(z.string().min(1).max(64), dataValue).refine(
   (obj) => Object.keys(obj).length <= 200,
   "Too many fields",
 );
+
+function sheetChannel(roomId: string, userId: string) {
+  return `sheet:${roomId}:${userId}`;
+}
+
+function checkSheetAccess(
+  membership: { role: string },
+  sessionUserId: string,
+  targetUserId: string,
+) {
+  if (membership.role !== "master" && targetUserId !== sessionUserId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Cannot edit this sheet" });
+  }
+}
+
+const sheetElement = z.object({}).catchall(z.unknown());
+const sheetFile = z.object({}).catchall(z.unknown());
 
 function parseSheetData(raw: string): Record<string, string | number> {
   try {
@@ -396,9 +419,7 @@ export const charactersRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const membership = await getMembership(ctx.db, input.roomId, ctx.session.user.id);
-      if (membership.role !== "master" && input.userId !== ctx.session.user.id) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Cannot edit this sheet" });
-      }
+      checkSheetAccess(membership, ctx.session.user.id, input.userId);
       let parsed: unknown;
       try {
         parsed = JSON.parse(input.scene);
@@ -424,6 +445,61 @@ export const charactersRouter = router({
       }
       await ctx.db.update(characterSheet).set({ scene: input.scene }).where(eq(characterSheet.id, existing.id));
       return { id: existing.id };
+    }),
+
+  pushSheetScene: protectedProcedure
+    .input(
+      z.object({
+        roomId: z.string().min(1),
+        userId: z.string().min(1),
+        elements: z.array(sheetElement).max(5000),
+        files: z.record(z.string().min(1).max(128), sheetFile).default({}),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const membership = await getMembership(ctx.db, input.roomId, ctx.session.user.id);
+      checkSheetAccess(membership, ctx.session.user.id, input.userId);
+      const payload = JSON.stringify({ elements: input.elements, files: input.files });
+      if (payload.length > 8000000) {
+        throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "Scene too large" });
+      }
+      const [existing] = await ctx.db
+        .select()
+        .from(characterSheet)
+        .where(and(eq(characterSheet.roomId, input.roomId), eq(characterSheet.userId, input.userId)));
+      if (!existing) {
+        const id = crypto.randomUUID();
+        await ctx.db.insert(characterSheet).values({
+          id,
+          roomId: input.roomId,
+          userId: input.userId,
+          scene: payload,
+        });
+      } else {
+        await ctx.db.update(characterSheet).set({ scene: payload }).where(eq(characterSheet.id, existing.id));
+      }
+      const message: CanvasSceneMessage = {
+        from: ctx.session.user.id,
+        elements: input.elements as unknown[],
+        files: input.files as Record<string, unknown>,
+      };
+      canvasBus.emit(sheetChannel(input.roomId, input.userId), { type: "scene", message });
+      return { ok: true };
+    }),
+
+  onSheetScene: protectedProcedure
+    .input(z.object({ roomId: z.string().min(1), userId: z.string().min(1) }))
+    .subscription(async function* (opts) {
+      const { ctx, input, signal } = opts;
+      const membership = await getMembership(ctx.db, input.roomId, ctx.session.user.id);
+      checkSheetAccess(membership, ctx.session.user.id, input.userId);
+      const userId = ctx.session.user.id;
+      for await (const [event] of on(canvasBus, sheetChannel(input.roomId, input.userId), { signal })) {
+        const data = event as { type: string; message: CanvasSceneMessage };
+        if (data.type !== "scene") continue;
+        if (data.message.from === userId) continue;
+        yield tracked(`${Date.now()}:${data.message.from}`, data.message);
+      }
     }),
 });
 

@@ -1,5 +1,6 @@
 declare module "@3d-dice/dice-box-threejs" {
   export type ThreeDiceBoxOptions = {
+    assetPath?: string;
     sounds?: boolean;
     volume?: number;
     strength?: number;

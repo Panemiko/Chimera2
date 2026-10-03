@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 
 import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
 import DiceThreeOverlay, { type ThreeDiceRequest } from "./dice-three-overlay";
 import CharacterSheetPanel from "./character-sheet-panel";
+import DiceResultPopupStack from "./dice-result-popup";
 import DiceTray from "./dice-tray";
 import HistoryOverlay from "./history-overlay";
 import RosterPanel from "./roster-panel";
@@ -14,6 +15,7 @@ import type { RoomEvent } from "./room-events";
 
 export default function RoomOverlays({ roomId, role }: { roomId: string; role: "master" | "player" }) {
   const [liveEvents, setLiveEvents] = useState<RoomEvent[]>([]);
+  const [popups, setPopups] = useState<RoomEvent[]>([]);
   const [threeRequest, setThreeRequest] = useState<ThreeDiceRequest | null>(null);
   const animatedIds = useRef(new Set<number>());
   const pendingDice = useRef(new Map<number, RoomEvent>());
@@ -23,12 +25,19 @@ export default function RoomOverlays({ roomId, role }: { roomId: string; role: "
 
   const history = useQuery(trpc.events.list.queryOptions({ roomId }));
 
+  const dismissPopup = useCallback((id: number) => {
+    setPopups((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
   function releaseDiceEvent(id: number) {
     const event = pendingDice.current.get(id);
     pendingDice.current.delete(id);
     if (!event) return;
     setLiveEvents((prev) =>
       prev.some((e) => e.id === event.id) ? prev : [...prev.slice(-99), event],
+    );
+    setPopups((prev) =>
+      prev.some((e) => e.id === event.id) ? prev : [...prev, event].slice(-3),
     );
   }
 
@@ -78,6 +87,7 @@ export default function RoomOverlays({ roomId, role }: { roomId: string; role: "
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
       <HistoryOverlay events={events} />
+      <DiceResultPopupStack popups={popups} onDismiss={dismissPopup} />
       <div className="pointer-events-auto absolute bottom-3 right-3 flex w-64 flex-col gap-2">
         <RosterPanel roomId={roomId} />
         <DiceTray roomId={roomId} latestDice={latestDice} />

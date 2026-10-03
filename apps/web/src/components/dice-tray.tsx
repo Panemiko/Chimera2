@@ -3,6 +3,17 @@ import { ChevronDown, ChevronUp, Dices, Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { Button } from "@chimera2/ui/components/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@chimera2/ui/components/card";
+import { Checkbox } from "@chimera2/ui/components/checkbox";
+import { Input } from "@chimera2/ui/components/input";
+import { Label } from "@chimera2/ui/components/label";
 import { trpc } from "@/utils/trpc";
 
 import type { RoomEvent } from "./room-events";
@@ -11,28 +22,33 @@ function ResultCard({ event }: { event: RoomEvent }) {
   if (event.payload.kind !== "dice_roll") return null;
   const p = event.payload;
   return (
-    <div className="panel-solid pointer-events-auto absolute bottom-full right-0 mb-2 flex w-72 max-w-72 flex-col gap-1 rounded-md border border-input px-3 py-2 shadow-md">
-      <span
-        className="w-fit rounded px-1.5 py-0.5 text-xs font-semibold text-white"
-        style={{ backgroundColor: p.authorColor ?? "#555" }}
-      >
-        {p.author}
-      </span>
-      <span className="text-xs opacity-70">{p.notation}</span>
-      <span className="text-lg font-bold leading-none">
-        {p.total}
-        {p.successes !== null && p.successes !== undefined && (
-          <span className="ml-1 text-xs font-normal opacity-60">
-            ({p.successes} {p.successes === 1 ? "success" : "successes"})
+    <Card
+      size="sm"
+      className="pointer-events-auto absolute right-0 bottom-full mb-2 w-56 py-0 shadow-md"
+    >
+      <CardContent className="flex flex-col gap-0.5 py-2">
+        <span
+          className="w-fit rounded px-1.5 py-0.5 text-xs font-semibold text-primary-foreground"
+          style={{ backgroundColor: p.authorColor ?? "var(--muted-foreground)" }}
+        >
+          {p.author}
+        </span>
+        <span className="text-xs text-muted-foreground">{p.notation}</span>
+        <span className="text-base leading-none font-bold">
+          {p.total}
+          {p.successes !== null && p.successes !== undefined && (
+            <span className="ml-1 text-xs font-normal text-muted-foreground">
+              ({p.successes} {p.successes === 1 ? "success" : "successes"})
+            </span>
+          )}
+        </span>
+        {event.secret && (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground italic">
+            <Lock className="size-3" /> secret
           </span>
         )}
-      </span>
-      {event.secret && (
-        <span className="flex items-center gap-1 text-[11px] italic opacity-60">
-          <Lock className="h-3 w-3" /> secret
-        </span>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -79,18 +95,23 @@ export default function DiceTray({
     <>
       {latestDice && <ResultCard event={latestDice} />}
 
-    <div className="panel-solid w-full rounded-md border border-input shadow-md">
-        <div className="flex items-center gap-2 border-b px-3 py-2">
-          <Dices className="h-4 w-4" />
-          <span className="text-sm font-semibold">Roll dice</span>
-          <button
-            aria-label={panelOpen ? "Collapse dice panel" : "Expand dice panel"}
-            className="ml-auto"
-            onClick={() => setPanelOpen((v) => !v)}
-          >
-            {panelOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-          </button>
-        </div>
+      <Card className="w-full gap-0 py-0 shadow-md">
+        <CardHeader className="py-2">
+          <CardTitle className="flex items-center gap-2">
+            <Dices className="size-4" />
+            Roll dice
+          </CardTitle>
+          <CardAction>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={panelOpen ? "Collapse dice panel" : "Expand dice panel"}
+              onClick={() => setPanelOpen((v) => !v)}
+            >
+              {panelOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+            </Button>
+          </CardAction>
+        </CardHeader>
         {panelOpen && (
           <form
             onSubmit={(e) => {
@@ -100,39 +121,34 @@ export default function DiceTray({
               submit.mutate({ roomId, notation: notation.trim(), secret });
             }}
           >
-            <div className="space-y-1 px-3 py-2">
-              <input
+            <CardContent className="border-t py-2">
+              <Input
                 ref={inputRef}
                 aria-label="Dice notation"
                 type="text"
                 spellCheck={false}
                 autoComplete="off"
                 placeholder="2d20kh1, 4d6!, 3d6+2"
-                className="w-full rounded border bg-background px-2 py-1 text-sm"
                 value={notation}
                 onChange={(e) => setNotation(e.target.value)}
               />
-            </div>
-            <div className="flex items-center gap-2 border-t px-3 py-2 text-sm">
-              <label className="flex items-center gap-1 text-xs">
-                <input
-                  type="checkbox"
+            </CardContent>
+            <CardContent className="flex items-center border-t py-2">
+              <Label htmlFor="dice-secret" className="flex items-center gap-1.5">
+                <Checkbox
+                  id="dice-secret"
                   checked={secret}
-                  onChange={(e) => setSecret(e.target.checked)}
+                  onCheckedChange={(v) => setSecret(v === true)}
                 />
                 Secret
-              </label>
-              <button
-                className="ml-auto rounded border px-3 py-0.5"
-                type="submit"
-                disabled={submit.isPending}
-              >
+              </Label>
+              <Button className="ml-auto" type="submit" disabled={submit.isPending}>
                 Roll
-              </button>
-            </div>
+              </Button>
+            </CardContent>
           </form>
         )}
-      </div>
+      </Card>
     </>
   );
 }
