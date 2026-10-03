@@ -61,7 +61,12 @@
   --link-color: var(--primary);
   --focus-highlight-color: var(--ring);
   --select-highlight-color: var(--ring);
-  --color-selection: var(--primary);
+  /* Canvas selection: must be a concrete color, not var(). Excalidraw
+     reads this via getComputedStyle and assigns it to canvas strokeStyle,
+     so var(--primary) stays unresolved and renders dark. Purple pair
+     taken from Excalidraw natives: solid violet on light, bright
+     lavender on dark. */
+  --color-selection: #6965db;
 
   /* Surface scale used by hover rows and dropdowns */
   --color-surface-high: var(--accent);
@@ -121,4 +126,12 @@
 
 .room-canvas .excalidraw .excalidraw-tooltip {
   --ui-font: "Inter Variable", system-ui, sans-serif;
+}
+
+/* Dark canvas sits on near-black dots, so the light-theme violet is too
+   dark there. Bright lavender keeps the selection outline and handles
+   readable. Higher specificity beats both our base rule and Excalidraw
+   natives. */
+.room-canvas .excalidraw.theme--dark {
+  --color-selection: #a8a5ff;
 }

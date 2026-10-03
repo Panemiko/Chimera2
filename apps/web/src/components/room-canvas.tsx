@@ -577,7 +577,7 @@ function RoomMenu({ room }: { room: RoomMenuInfo }) {
         >
           {name.charAt(0).toUpperCase()}
         </span>
-        <div className="px-1 py-0.5 text-xs leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+        <div className="px-1 py-0.5 text-xs leading-tight dark:drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
           <div className="font-semibold text-foreground">{name}</div>
           <div className="text-muted-foreground">{room.role === "master" ? "Master" : "Player"}</div>
         </div>

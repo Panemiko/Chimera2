@@ -6,7 +6,6 @@ import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
 import DiceThreeOverlay, { type ThreeDiceRequest } from "./dice-three-overlay";
-import CharacterSheetPanel from "./character-sheet-panel";
 import DiceResultPopupStack from "./dice-result-popup";
 import DiceTray from "./dice-tray";
 import HistoryOverlay from "./history-overlay";
@@ -92,7 +91,6 @@ export default function RoomOverlays({ roomId, role }: { roomId: string; role: "
         <RosterPanel roomId={roomId} />
         <DiceTray roomId={roomId} latestDice={latestDice} />
       </div>
-      <CharacterSheetPanel roomId={roomId} role={role} />
       <DiceThreeOverlay request={threeRequest} onSettled={handleThreeSettled} />
     </div>
   );

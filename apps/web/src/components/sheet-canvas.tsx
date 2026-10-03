@@ -129,7 +129,7 @@ export default function SheetCanvas({
   layers.push(`radial-gradient(circle, ${dot} 1.2px, transparent 1.2px)`);
   return (
     <div
-      className="sheet-canvas relative h-[60vh] w-full overflow-hidden rounded border border-input"
+      className="sheet-canvas relative min-h-0 w-full flex-1 overflow-hidden rounded border border-input"
       style={{
         backgroundImage: layers.join(", "),
         backgroundSize: templateUrl ? "contain, 24px 24px" : "24px 24px",
