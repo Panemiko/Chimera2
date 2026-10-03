@@ -12,6 +12,7 @@ import { WebSocketServer } from "ws";
 import { createContext } from "./context";
 import { ENV } from "./env.server";
 import { auth } from "./services";
+import { registerUploads } from "./uploads";
 
 const baseCorsConfig = {
   origin: ENV.CORS_ORIGIN,
@@ -32,6 +33,7 @@ const identifyUser = createAuthMiddleware(auth as BetterAuthInstance, {
 
 const fastify = Fastify({
   logger: true,
+  bodyLimit: 10 * 1024 * 1024,
 });
 
 fastify.register(evlog, {
@@ -85,6 +87,8 @@ fastify.register(fastifyTRPCPlugin, {
 fastify.get("/", async () => {
   return "OK";
 });
+
+await registerUploads(fastify);
 
 await fastify.listen({ port: 3000, host: "0.0.0.0" });
 console.log("Server running on port 3000");

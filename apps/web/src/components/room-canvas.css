@@ -8,3 +8,14 @@
 .excalidraw .sidebar-trigger {
   display: none !important;
 }
+
+/* Solid overlay background. Plain rgb under a .dark selector paints
+   identically in every browser, unlike the token chain that one of the
+   browsers fails to resolve. */
+.panel-solid {
+  background-color: #ffffff;
+}
+
+.dark .panel-solid {
+  background-color: #242424;
+}

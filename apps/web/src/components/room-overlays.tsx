@@ -6,11 +6,13 @@ import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
 import DiceThreeOverlay, { type ThreeDiceRequest } from "./dice-three-overlay";
+import CharacterSheetPanel from "./character-sheet-panel";
 import DiceTray from "./dice-tray";
 import HistoryOverlay from "./history-overlay";
+import RosterPanel from "./roster-panel";
 import type { RoomEvent } from "./room-events";
 
-export default function RoomOverlays({ roomId }: { roomId: string }) {
+export default function RoomOverlays({ roomId, role }: { roomId: string; role: "master" | "player" }) {
   const [liveEvents, setLiveEvents] = useState<RoomEvent[]>([]);
   const [threeRequest, setThreeRequest] = useState<ThreeDiceRequest | null>(null);
   const animatedIds = useRef(new Set<number>());
@@ -76,7 +78,11 @@ export default function RoomOverlays({ roomId }: { roomId: string }) {
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
       <HistoryOverlay events={events} />
-      <DiceTray roomId={roomId} latestDice={latestDice} />
+      <div className="pointer-events-auto absolute bottom-3 right-3 flex w-64 flex-col gap-2">
+        <RosterPanel roomId={roomId} />
+        <DiceTray roomId={roomId} latestDice={latestDice} />
+      </div>
+      <CharacterSheetPanel roomId={roomId} role={role} />
       <DiceThreeOverlay request={threeRequest} onSettled={handleThreeSettled} />
     </div>
   );

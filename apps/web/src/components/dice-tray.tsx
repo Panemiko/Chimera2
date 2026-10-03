@@ -11,7 +11,7 @@ function ResultCard({ event }: { event: RoomEvent }) {
   if (event.payload.kind !== "dice_roll") return null;
   const p = event.payload;
   return (
-    <div className="pointer-events-auto absolute bottom-3 right-[17.5rem] flex max-w-72 flex-col gap-1 rounded-md border border-input bg-background/95 px-3 py-2 shadow-md backdrop-blur">
+    <div className="panel-solid pointer-events-auto absolute bottom-full right-0 mb-2 flex w-72 max-w-72 flex-col gap-1 rounded-md border border-input px-3 py-2 shadow-md">
       <span
         className="w-fit rounded px-1.5 py-0.5 text-xs font-semibold text-white"
         style={{ backgroundColor: p.authorColor ?? "#555" }}
@@ -79,7 +79,7 @@ export default function DiceTray({
     <>
       {latestDice && <ResultCard event={latestDice} />}
 
-      <div className="pointer-events-auto absolute bottom-3 right-3 w-64 rounded-md border border-input bg-background/95 shadow-md backdrop-blur">
+    <div className="panel-solid w-full rounded-md border border-input shadow-md">
         <div className="flex items-center gap-2 border-b px-3 py-2">
           <Dices className="h-4 w-4" />
           <span className="text-sm font-semibold">Roll dice</span>

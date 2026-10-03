@@ -19,6 +19,7 @@
     "@hono/trpc-server": "^0.4.2",
     "@trpc/server": "catalog:",
     "better-auth": "catalog:",
+    "drizzle-orm": "catalog:",
     "evlog": "^2.28.1",
     "fastify": "^5.12.3",
     "libsql": "catalog:",

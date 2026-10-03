@@ -1,0 +1,15 @@
+/* Chrome inside the private space sheet. The zoom footer and the
+   undo/redo buttons take too much room at this size, so they are
+   hidden here. Keyboard still works: ctrl+wheel zooms, ctrl+z undoes.
+   Scoped to .sheet-canvas so the main room canvas keeps its controls. */
+.sheet-canvas .zoom-actions {
+  display: none !important;
+}
+
+.sheet-canvas .undo-redo-buttons {
+  display: none !important;
+}
+
+.sheet-canvas .App-toolbar {
+  display: none !important;
+}

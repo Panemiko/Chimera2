@@ -80,7 +80,7 @@ export default function Room() {
           />
         </Suspense>
       </div>
-      <RoomOverlays roomId={roomData.id} />
+      <RoomOverlays roomId={roomData.id} role={roomData.role} />
     </div>
   );
 }

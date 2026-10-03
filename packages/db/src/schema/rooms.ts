@@ -10,6 +10,7 @@ export const room = sqliteTable("room", {
     .notNull()
     .references(() => user.id),
   inviteToken: text("invite_token").notNull().unique(),
+  canvasScene: text("canvas_scene").notNull().default("{}"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
     .notNull(),

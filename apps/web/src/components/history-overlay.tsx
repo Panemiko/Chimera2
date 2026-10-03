@@ -2,12 +2,6 @@ import { ChevronLeft, History } from "lucide-react";
 import { useState } from "react";
 
 import { impliedModifier, type RoomEvent } from "./room-events";
-
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
 function EventLine({ event }: { event: RoomEvent }) {
   const p = event.payload;
 
@@ -102,7 +96,7 @@ export default function HistoryOverlay({ events }: { events: RoomEvent[] }) {
     return (
       <button
         aria-label="Show history"
-        className="pointer-events-auto absolute left-3 top-16 rounded-md border border-input bg-background p-2 shadow-md"
+        className="pointer-events-auto absolute bottom-3 left-3 rounded-md border border-input bg-background p-2 shadow-md"
         onClick={() => setOpen(true)}
       >
         <History className="h-4 w-4" />
@@ -111,7 +105,9 @@ export default function HistoryOverlay({ events }: { events: RoomEvent[] }) {
   }
 
   return (
-    <div className="pointer-events-auto absolute left-3 top-16 flex max-h-72 w-72 flex-col rounded-md border border-input bg-background/95 shadow-md backdrop-blur">
+    <div
+      className="panel-solid pointer-events-auto absolute bottom-3 left-3 flex max-h-72 w-72 flex-col rounded-md border border-input shadow-md"
+    >
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <History className="h-4 w-4" />
         <span className="text-sm font-semibold">History</span>
@@ -122,9 +118,6 @@ export default function HistoryOverlay({ events }: { events: RoomEvent[] }) {
       <ul className="min-h-0 space-y-1.5 overflow-y-auto px-3 py-2">
         {newestFirst.map((event) => (
           <li key={event.id} className="text-xs leading-snug">
-            <span className="mr-1 text-[10px] tabular-nums opacity-40">
-              {formatTime(event.createdAt)}
-            </span>
             <EventLine event={event} />
           </li>
         ))}
