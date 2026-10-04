@@ -104,6 +104,101 @@ Docker Compose uses the local `./.data/local.db` file. Run `bun run db:push` bef
 
 For more details, see the guide on [Deploying with Docker Compose](https://www.better-t-stack.dev/docs/guides/docker).
 
+## Producao (guia em portugues)
+
+Teste feito em 2026-10-03: `bun run build` passou (server + web), imagens
+`chimera2-server` e `chimera2-web` construidas com sucesso e ambas
+responderam `200` na rota `/` em teste de runtime.
+
+### Build nativo (sem Docker)
+
+```bash
+bun run build
+```
+
+Sobe cada app a partir do artefato compilado:
+
+```bash
+cd apps/server && bun run dist/index.mjs   # API na porta 3000
+cd apps/web && PORT=3001 bun run start     # web na porta 3001
+```
+
+O server usa o `DATABASE_URL` do `apps/server/.env`
+(`file:../../.data/local.db`). A web usa o `VITE_SERVER_URL` gravado no
+build para falar com a API no navegador.
+
+### Docker em producao local (localhost)
+
+```bash
+bun run db:push
+bun run docker:up
+```
+
+Web em [http://localhost:3001](http://localhost:3001), API em
+[http://localhost:3000](http://localhost:3000). Pare o `bun run dev` antes:
+as portas 3000/3001 conflitam com o compose.
+
+### Docker na rede ZeroTier
+
+O IP desta maquina na ZeroTier hoje e `192.168.194.126` (interface
+`ztyou4dsnv`). Confira com `ip -brief addr` antes de subir, pois o IP pode
+mudar. O IP entra so no `.env` da raiz (o compose le sozinho), sem rebuild:
+
+- `VITE_SERVER_URL`: para onde o navegador chama a API
+  (ex.: `http://192.168.194.126:3000`)
+- `CORS_ORIGIN`: origem da web
+  (ex.: `http://192.168.194.126:3001`)
+- `BETTER_AUTH_URL`: URL publica da API
+  (ex.: `http://192.168.194.126:3000`)
+
+Depois de editar, basta recriar os containers (sem `--build`):
+
+```bash
+docker compose up -d
+```
+
+Funciona porque o entrypoint da web gera o `/__config.js` na subida a
+partir do `VITE_SERVER_URL` do compose. Testado: mesma imagem serviu
+o IP ZeroTier e localhost em subidas seguidas, so trocando o env.
+O `apps/web/.env` continua com localhost para o dev local e nao
+afeta o Docker.
+
+Os cookies de sessao acompanham o protocolo do `BETTER_AUTH_URL`:
+em http saem sem `Secure` (navegador recusava o cookie `Secure` em IP
+sem TLS e o login caia logo depois do sucesso), em https mantem
+`Secure` + `SameSite=None`.
+
+Acesso na rede ZeroTier: web em `http://192.168.194.126:3001`, API em
+`http://192.168.194.126:3000`. Logs com `bun run docker:logs`, parada com
+`bun run docker:down`.
+
+Atencao: qualquer dispositivo na sua rede ZeroTier alcanca o app. Troque o
+`BETTER_AUTH_SECRET` do `apps/server/.env` por um valor novo e exclusivo de
+producao antes de expor (ele e lido pelo container via `env_file`).
+
+### Reset de dados (SQLite local)
+
+O banco mora em `.data/local.db` (montado no container como
+`/data/local.db`). Como a pasta tem ponto no nome e some em alguns
+exploradores de arquivo, ha um link visivel na raiz: `data/` aponta
+para `.data/`. Uploads em `.data/uploads/` (ou `data/uploads/`).
+
+Backup antes de apagar:
+
+```bash
+cp .data/local.db /tmp/opencode/local.db.bak-$(date +%Y%m%d-%H%M%S)
+```
+
+Apaga tudo (users, accounts, sessions, rooms, membros, eventos, fichas,
+templates) e limpa uploads:
+
+```bash
+sqlite3 .data/local.db "PRAGMA foreign_keys=OFF; DELETE FROM verification; DELETE FROM session; DELETE FROM account; DELETE FROM room_event; DELETE FROM character_custom_field; DELETE FROM character_sheet; DELETE FROM room_sheet_template; DELETE FROM room_member; DELETE FROM character_template; DELETE FROM room; DELETE FROM \"user\"; DELETE FROM sqlite_sequence WHERE name='room_event'; PRAGMA foreign_keys=ON; VACUUM;"
+rm -f .data/uploads/*
+```
+
+Ultimo reset: 2026-10-03, banco de 4,7M para 128K, todas as tabelas zeradas.
+
 ## Project Structure
 
 ```

@@ -5,6 +5,7 @@ import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
 import { toast } from "sonner";
 
 import { ENV } from "../env";
+import { resolveServerUrl } from "../lib/runtime-config";
 
 function getServerUrl(url: string) {
   const processEnv = (
@@ -18,7 +19,7 @@ function getServerUrl(url: string) {
       : processEnv.SERVER_URL;
   }
 
-  return url.endsWith("/") ? url.slice(0, -1) : url;
+  return resolveServerUrl(url);
 }
 
 function toWsUrl(httpUrl: string) {

@@ -14,6 +14,11 @@ export function createAuth(
   database: Database,
   desktopOrigins: readonly string[] = [],
 ) {
+  // Cookies `Secure` sao recusados pelo navegador em origem http sem TLS
+  // (ex.: IP do ZeroTier), entao a sessao nunca grudava: o sign-up
+  // retornava sucesso mas os requests seguintes iam sem cookie.
+  // localhost e excecao (contexto seguro), por isso o dev funcionava.
+  const isSecure = env.BETTER_AUTH_URL.startsWith("https://");
   return betterAuth({
     database: drizzleAdapter(database, {
       provider: "sqlite",
@@ -30,8 +35,8 @@ export function createAuth(
     baseURL: env.BETTER_AUTH_URL,
     advanced: {
       defaultCookieAttributes: {
-        sameSite: "none",
-        secure: true,
+        sameSite: isSecure ? "none" : "lax",
+        secure: isSecure,
         httpOnly: true,
       },
     },

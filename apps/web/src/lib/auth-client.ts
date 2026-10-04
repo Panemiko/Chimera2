@@ -2,6 +2,7 @@ import { inferAdditionalFields } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
 import { ENV } from "../env";
+import { resolveServerUrl } from "./runtime-config";
 
 function getServerUrl(url: string) {
   const processEnv = (
@@ -15,7 +16,7 @@ function getServerUrl(url: string) {
       : processEnv.SERVER_URL;
   }
 
-  return url.endsWith("/") ? url.slice(0, -1) : url;
+  return resolveServerUrl(url);
 }
 
 export const authClient = createAuthClient({

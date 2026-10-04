@@ -8,7 +8,7 @@ import { queryClient, trpc } from "@/utils/trpc";
 import type { Route } from "./+types/_index";
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Rooms" }, { name: "description", content: "Create or open a game room" }];
+  return [{ title: "Rooms | Chimera2" }, { name: "description", content: "Create or open a game room" }];
 }
 
 export default function Home() {

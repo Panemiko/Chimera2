@@ -8,6 +8,7 @@ import { Label } from "@chimera2/ui/components/label";
 import { Skeleton } from "@chimera2/ui/components/skeleton";
 import { ENV } from "@/env";
 import { authClient } from "@/lib/auth-client";
+import { resolveServerUrl } from "@/lib/runtime-config";
 import { trpc } from "@/utils/trpc";
 
 import { parseSheetScene } from "./sheet-scene";
@@ -49,7 +50,9 @@ export default function CharacterSheetPanel({
   // silently dropped and the next autosave overwrote it with stale content.
   // (SheetCanvas also heals this case now via its apply-if-clean effect.)
 
-  const templateUrl = template.data?.url ? `${ENV.VITE_SERVER_URL}${template.data.url}` : null;
+  const templateUrl = template.data?.url
+    ? `${resolveServerUrl(ENV.VITE_SERVER_URL)}${template.data.url}`
+    : null;
   const scene = sheetQuery.data ? parseSheetScene(sheetQuery.data.scene) : null;
 
   return (

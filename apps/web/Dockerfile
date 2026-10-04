@@ -13,8 +13,10 @@ RUN --mount=type=secret,id=web_env,target=/app/apps/web/.env.local --mount=type=
 FROM node:24-slim AS runner
 WORKDIR /app
 COPY --from=builder /app .
+RUN chmod +x /app/apps/web/docker-entrypoint.sh
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV HOST=0.0.0.0
 EXPOSE 3001
+ENTRYPOINT ["/app/apps/web/docker-entrypoint.sh"]
 CMD ["sh", "-c", "cd apps/web && npm run start"]

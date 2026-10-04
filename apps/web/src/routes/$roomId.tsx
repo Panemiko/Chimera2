@@ -49,7 +49,7 @@ function createBrowserLayoutStore(): LayoutStore {
 }
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Room" }];
+  return [{ title: "Room | Chimera2" }];
 }
 
 export default function Room() {
@@ -75,6 +75,12 @@ export default function Room() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (room.data?.name) {
+      document.title = `${room.data.name} | Chimera2`;
+    }
+  }, [room.data?.name]);
 
   useEffect(() => {
     if (privateOpen) {

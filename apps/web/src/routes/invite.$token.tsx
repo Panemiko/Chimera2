@@ -8,7 +8,7 @@ import { queryClient, trpc } from "@/utils/trpc";
 import type { Route } from "./+types/invite.$token";
 
 export function meta({}: Route.MetaArgs) {
-  return [{ title: "Join room" }];
+  return [{ title: "Join room | Chimera2" }];
 }
 
 export default function Invite() {
