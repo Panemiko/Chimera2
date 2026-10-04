@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { ChevronDown, Dices, Lock } from "lucide-react";
+import { ChevronDown, Dices } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -17,36 +17,30 @@ import { Label } from "@chimera2/ui/components/label";
 import { trpc } from "@/utils/trpc";
 
 import type { RoomEvent } from "./room-events";
+import DiceBreakdown, { LATEST_DICE_CARD_ID } from "./dice-breakdown";
 
-function ResultCard({ event }: { event: RoomEvent }) {
+function ResultCard({ event, liveColor }: { event: RoomEvent; liveColor?: string | null }) {
+  const [highlight, setHighlight] = useState(false);
+
+  // A bandeja só troca quando o voo termina, então montar com um
+  // resultado novo já é o sinal da chegada: pulsa para marcar.
+  useEffect(() => {
+    setHighlight(true);
+    const t = window.setTimeout(() => setHighlight(false), 900);
+    return () => window.clearTimeout(t);
+  }, [event.id]);
+
   if (event.payload.kind !== "dice_roll") return null;
-  const p = event.payload;
   return (
     <Card
+      id={LATEST_DICE_CARD_ID}
       size="sm"
-      className="pointer-events-auto absolute right-0 bottom-full mb-2 w-56 origin-bottom-right animate-in py-0 shadow-md fade-in slide-in-from-bottom-2 duration-200"
+      className={`pointer-events-auto absolute right-0 bottom-full mb-2 w-64 origin-bottom-right animate-in py-1 shadow-md fade-in slide-in-from-bottom-2 duration-200 transition-shadow ${
+        highlight ? "ring-2 ring-primary" : ""
+      }`}
     >
-      <CardContent className="flex flex-col gap-0.5 py-2">
-        <span
-          className="w-fit rounded px-1.5 py-0.5 text-xs font-semibold text-primary-foreground"
-          style={{ backgroundColor: p.authorColor ?? "var(--muted-foreground)" }}
-        >
-          {p.author}
-        </span>
-        <span className="text-xs text-muted-foreground">{p.notation}</span>
-        <span className="text-base leading-none font-bold">
-          {p.total}
-          {p.successes !== null && p.successes !== undefined && (
-            <span className="ml-1 text-xs font-normal text-muted-foreground">
-              ({p.successes} {p.successes === 1 ? "success" : "successes"})
-            </span>
-          )}
-        </span>
-        {event.secret && (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground italic">
-            <Lock className="size-3" /> secret
-          </span>
-        )}
+      <CardContent className="py-2.5">
+        <DiceBreakdown event={event} liveColor={liveColor} />
       </CardContent>
     </Card>
   );
@@ -55,9 +49,11 @@ function ResultCard({ event }: { event: RoomEvent }) {
 export default function DiceTray({
   roomId,
   latestDice,
+  colorByUserId,
 }: {
   roomId: string;
   latestDice: RoomEvent | null;
+  colorByUserId?: Map<string, string | null>;
 }) {
   const [notation, setNotation] = useState("2d20");
   const [secret, setSecret] = useState(false);
@@ -93,7 +89,15 @@ export default function DiceTray({
 
   return (
     <>
-      {latestDice && <ResultCard key={latestDice.id} event={latestDice} />}
+      {latestDice && (
+        <ResultCard
+          key={latestDice.id}
+          event={latestDice}
+          liveColor={
+            latestDice.actorId ? (colorByUserId?.get(latestDice.actorId) ?? undefined) : undefined
+          }
+        />
+      )}
 
       <Card className="w-full gap-0 overflow-hidden py-0 shadow-md">
         <CardHeader className="py-2">

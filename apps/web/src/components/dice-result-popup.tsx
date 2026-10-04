@@ -1,88 +1,16 @@
-import { Lock } from "lucide-react";
-import { useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Card, CardContent } from "@chimera2/ui/components/card";
 import { playDicePopupSound } from "@/utils/dice-popup-sound";
 
-import { impliedModifier, type RoomEvent } from "./room-events";
+import DiceBreakdown, { LATEST_DICE_CARD_ID } from "./dice-breakdown";
+import type { RoomEvent } from "./room-events";
 
 const POPUP_TTL_MS = 4000;
+const FLY_MS = 650;
 const MAX_VISIBLE = 3;
 
-function DiceBreakdown({ event, liveColor }: { event: RoomEvent; liveColor?: string | null }) {
-  const p = event.payload;
-  if (p.kind !== "dice_roll") return null;
-  const modifier = p.groups ? impliedModifier(p) : (p.modifier ?? 0);
-  const displayColor = liveColor ?? p.authorColor;
-
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="flex items-center gap-1.5 text-xs font-semibold">
-        <span
-          className="inline-block size-2 rounded-full"
-          style={{ backgroundColor: displayColor ?? "var(--muted-foreground)" }}
-        />
-        {p.author}
-        {event.secret && (
-          <span className="flex items-center gap-0.5 font-normal text-muted-foreground italic">
-            <Lock className="size-3" />
-          </span>
-        )}
-      </span>
-      {p.groups ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {p.groups.map((g, gi) => (
-            <span key={gi} className="flex flex-wrap items-center gap-1">
-              {gi > 0 && <span className="text-sm text-muted-foreground">+</span>}
-              <span className="text-xs font-medium text-muted-foreground">d{g.sides}</span>
-              {[...g.rolls]
-                .sort((a, b) => b.value - a.value)
-                .map((r, ri) => (
-                  <span
-                    key={ri}
-                    className={
-                      r.dropped
-                        ? "rounded border px-1.5 py-0.5 text-xs text-muted-foreground line-through opacity-60"
-                        : r.crit === "success"
-                          ? "rounded border border-emerald-500/50 bg-emerald-500/10 px-1.5 py-0.5 text-xs font-bold text-emerald-600 dark:text-emerald-400"
-                          : r.crit === "failure"
-                            ? "rounded border border-red-500/50 bg-red-500/10 px-1.5 py-0.5 text-xs font-bold text-red-600 dark:text-red-400"
-                            : "rounded border px-1.5 py-0.5 text-xs font-semibold"
-                    }
-                  >
-                    {r.value}
-                    {r.crit === "success" ? "!" : r.crit === "failure" ? "x" : ""}
-                  </span>
-                ))}
-            </span>
-          ))}
-          {modifier !== 0 && (
-            <span className="text-xs font-medium">
-              <span className="text-muted-foreground">{modifier > 0 ? "+" : "-"}</span>{" "}
-              {Math.abs(modifier)}
-            </span>
-          )}
-        </div>
-      ) : (
-        <span className="text-xs font-medium">
-          {(p.results ?? [])
-            .map((r) => `d${r.sides} [${[...r.rolls].sort((a, b) => b - a).join(", ")}]`)
-            .join(" + ")}
-          {modifier !== 0 && ` ${modifier > 0 ? "+" : "-"} ${Math.abs(modifier)}`}
-        </span>
-      )}
-      <div className="flex items-baseline gap-1.5">
-        <span className="text-muted-foreground">=</span>
-        <span className="text-xl leading-none font-bold">{p.total}</span>
-        {p.successes !== null && p.successes !== undefined && (
-          <span className="text-xs font-normal text-muted-foreground">
-            ({p.successes} {p.successes === 1 ? "success" : "successes"})
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
+type ExitTransform = { x: number; y: number; scale: number } | null;
 
 function PopupCard({
   event,
@@ -93,24 +21,88 @@ function PopupCard({
   liveColor?: string | null;
   onDismiss: (id: number) => void;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const exitingRef = useRef(false);
+  const timers = useRef<number[]>([]);
+  const [exit, setExit] = useState<ExitTransform>(null);
+  const [fading, setFading] = useState(false);
+
+  const later = useCallback((fn: () => void, ms: number) => {
+    timers.current.push(window.setTimeout(fn, ms));
+  }, []);
+
+  const finish = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("dice-popup-landed", { detail: { id: event.id } }));
+    onDismiss(event.id);
+  }, [event.id, onDismiss]);
+
+  const startExit = useCallback(() => {
+    if (exitingRef.current) return;
+    exitingRef.current = true;
+    const el = ref.current;
+    if (!el) {
+      finish();
+      return;
+    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finish();
+      return;
+    }
+    const source = el.getBoundingClientRect();
+    const target = document.getElementById(LATEST_DICE_CARD_ID)?.getBoundingClientRect();
+    if (!target || target.width === 0 || source.width === 0) {
+      setFading(true);
+      later(finish, 250);
+      return;
+    }
+    const dx = target.left + target.width / 2 - (source.left + source.width / 2);
+    const dy = target.top + target.height / 2 - (source.top + source.height / 2);
+    const scale = Math.min(1, Math.max(0.4, target.width / source.width));
+    setExit({ x: dx, y: dy, scale });
+    later(finish, FLY_MS + 30);
+  }, [event.id, finish, later, onDismiss]);
+
   // Hook antes do return antecipado: hook depois de return condicional
   // quebra a ordem dos hooks entre renders.
   useEffect(() => {
     if (event.payload.kind !== "dice_roll") return;
     playDicePopupSound();
-    const t = setTimeout(() => onDismiss(event.id), POPUP_TTL_MS);
-    return () => clearTimeout(t);
-  }, [event.id, event.payload, onDismiss]);
+    const t = window.setTimeout(startExit, POPUP_TTL_MS);
+    return () => window.clearTimeout(t);
+  }, [event.id, event.payload, startExit]);
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      for (const t of pending) window.clearTimeout(t);
+    };
+  }, []);
 
   const p = event.payload;
   if (p.kind !== "dice_roll") return null;
 
   return (
-    <Card size="sm" className="pointer-events-none w-auto max-w-96 py-1 shadow-lg">
-      <CardContent className="py-2.5">
-        <DiceBreakdown event={event} liveColor={liveColor} />
-      </CardContent>
-    </Card>
+    <div
+      ref={ref}
+      className="will-change-transform"
+      style={
+        exit
+          ? {
+              transform: `translate(${exit.x}px, ${exit.y}px) scale(${exit.scale})`,
+              opacity: 0.15,
+              transition: `transform ${FLY_MS}ms cubic-bezier(0.22, 0.9, 0.28, 1), opacity ${FLY_MS}ms ease`,
+            }
+          : fading
+            ? { opacity: 0, transition: "opacity 250ms ease" }
+            : undefined
+      }
+    >
+      <Card size="sm" className="pointer-events-none w-auto max-w-96 py-1 shadow-lg">
+        <CardContent className="py-2.5">
+          <DiceBreakdown event={event} liveColor={liveColor} />
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

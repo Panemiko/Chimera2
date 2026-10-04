@@ -216,7 +216,7 @@ export default function Room() {
           defaultSize={privateSize}
           minSize={360}
           maxSize="50%"
-          className="min-w-0 transition-[flex-basis] duration-300 ease-out motion-reduce:transition-none"
+          className="relative z-30 min-w-0 isolate bg-background transition-[flex-basis] duration-300 ease-out motion-reduce:transition-none"
         >
           <CharacterSheetPanel
             roomId={roomData.id}

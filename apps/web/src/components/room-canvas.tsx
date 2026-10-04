@@ -149,9 +149,33 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
     if (path.getAttribute("d") !== d) path.setAttribute("d", d);
   }
 
+  // O SVGLayer do Excalidraw e fixed em tela cheia com overflow visivel
+  // (ver SVGLayer.scss no pacote). Sem clip ele vaza para cima do painel
+  // privado e dos overlays. Como o trail usa coords de viewport, o clip
+  // precisa ser o rect do container em coords de viewport.
+  const lastClipRef = useRef<string | null>(null);
+
+  function clipLaserLayer() {
+    const root = containerRef.current;
+    if (!root) return;
+    const layer = root.querySelector<HTMLElement>(".excalidraw .SVGLayer");
+    if (!layer) return;
+    const rect = root.getBoundingClientRect();
+    const top = Math.max(0, Math.round(rect.top));
+    const left = Math.max(0, Math.round(rect.left));
+    const right = Math.max(0, Math.round(window.innerWidth - rect.right));
+    const bottom = Math.max(0, Math.round(window.innerHeight - rect.bottom));
+    const clip = `inset(${top}px ${right}px ${bottom}px ${left}px)`;
+    if (lastClipRef.current !== clip) {
+      lastClipRef.current = clip;
+      layer.style.clipPath = clip;
+    }
+  }
+
   function handleViewChange(appState: unknown) {
     const state = appState as { scrollX?: number; scrollY?: number; zoom?: { value: number } };
     paintGrid(state.scrollX ?? 0, state.scrollY ?? 0, state.zoom?.value ?? 1);
+    clipLaserLayer();
   }
 
   function syncViewFromApi() {
@@ -169,6 +193,7 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
     if (gridLoopRef.current !== null) return;
     const tick = () => {
       gridLoopRef.current = requestAnimationFrame(tick);
+      clipLaserLayer();
       try {
         const appState = apiRef.current?.getAppState() as
           | { scrollX?: number; scrollY?: number; zoom?: { value: number } }
@@ -360,17 +385,25 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
       const w = Math.round(rect.width);
       const h = Math.round(rect.height);
       const prev = gridSizeRef.current;
-      if (prev.w === w && prev.h === h) return;
+      if (prev.w === w && prev.h === h) {
+        clipLaserLayer();
+        return;
+      }
       gridSizeRef.current = { w, h };
       gridSvgRef.current?.setAttribute("width", String(w));
       gridSvgRef.current?.setAttribute("height", String(h));
       const cam = gridCamRef.current;
       paintGrid(cam.scrollX, cam.scrollY, cam.zoom);
+      clipLaserLayer();
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(el);
-    return () => observer.disconnect();
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialElements, initialFiles]);
 
@@ -598,6 +631,7 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
             applyServerSceneIfClean();
             syncViewFromApi();
             startGridLoop();
+            clipLaserLayer();
           }}
           initialData={{
             elements: restoreElements(initialElements as never, null),

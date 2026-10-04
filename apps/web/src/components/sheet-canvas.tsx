@@ -189,6 +189,42 @@ export default function SheetCanvas({
     ),
   );
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const lastClipRef = useRef<string | null>(null);
+
+  // Mesmo problema do canvas global: o SVGLayer do laser e fixed em tela
+  // cheia, entao o traco feito no espaco privado vaza para o mapa global.
+  function clipLaserLayer() {
+    const root = containerRef.current;
+    if (!root) return;
+    const layer = root.querySelector<HTMLElement>(".excalidraw .SVGLayer");
+    if (!layer) return;
+    const rect = root.getBoundingClientRect();
+    const top = Math.max(0, Math.round(rect.top));
+    const left = Math.max(0, Math.round(rect.left));
+    const right = Math.max(0, Math.round(window.innerWidth - rect.right));
+    const bottom = Math.max(0, Math.round(window.innerHeight - rect.bottom));
+    const clip = `inset(${top}px ${right}px ${bottom}px ${left}px)`;
+    if (lastClipRef.current !== clip) {
+      lastClipRef.current = clip;
+      layer.style.clipPath = clip;
+    }
+  }
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    clipLaserLayer();
+    const observer = new ResizeObserver(() => clipLaserLayer());
+    observer.observe(el);
+    window.addEventListener("resize", clipLaserLayer);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", clipLaserLayer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const dark = resolvedTheme === "dark";
   const dot = dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.12)";
   const layers = [];
@@ -196,6 +232,7 @@ export default function SheetCanvas({
   layers.push(`radial-gradient(circle, ${dot} 1.2px, transparent 1.2px)`);
   return (
     <div
+      ref={containerRef}
       className="sheet-canvas relative min-h-0 w-full flex-1 overflow-hidden rounded border border-input"
       style={{
         backgroundImage: layers.join(", "),
@@ -211,6 +248,7 @@ export default function SheetCanvas({
           apiRef.current = api as unknown as SheetExcalidrawApi;
           // The server copy may have arrived before the API was ready.
           applyServerSceneIfClean();
+          clipLaserLayer();
         }}
         initialData={{
           elements: restoreElements(
