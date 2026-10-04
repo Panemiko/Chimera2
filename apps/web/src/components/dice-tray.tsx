@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp, Dices, Lock } from "lucide-react";
+import { ChevronDown, Dices, Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -24,7 +24,7 @@ function ResultCard({ event }: { event: RoomEvent }) {
   return (
     <Card
       size="sm"
-      className="pointer-events-auto absolute right-0 bottom-full mb-2 w-56 py-0 shadow-md"
+      className="pointer-events-auto absolute right-0 bottom-full mb-2 w-56 origin-bottom-right animate-in py-0 shadow-md fade-in slide-in-from-bottom-2 duration-200"
     >
       <CardContent className="flex flex-col gap-0.5 py-2">
         <span
@@ -93,9 +93,9 @@ export default function DiceTray({
 
   return (
     <>
-      {latestDice && <ResultCard event={latestDice} />}
+      {latestDice && <ResultCard key={latestDice.id} event={latestDice} />}
 
-      <Card className="w-full gap-0 py-0 shadow-md">
+      <Card className="w-full gap-0 overflow-hidden py-0 shadow-md">
         <CardHeader className="py-2">
           <CardTitle className="flex items-center gap-2">
             <Dices className="size-4" />
@@ -106,48 +106,59 @@ export default function DiceTray({
               variant="ghost"
               size="icon-sm"
               aria-label={panelOpen ? "Collapse dice panel" : "Expand dice panel"}
+              aria-expanded={panelOpen}
               onClick={() => setPanelOpen((v) => !v)}
             >
-              {panelOpen ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
+              <ChevronDown
+                className={`size-4 transition-transform duration-300 ease-out motion-reduce:transition-none ${
+                  !panelOpen ? "-rotate-180" : ""
+                }`}
+              />
             </Button>
           </CardAction>
         </CardHeader>
-        {panelOpen && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (submit.isPending || notation.trim() === "") return;
-              // Server parses and rolls; syntax errors surface as a toast.
-              submit.mutate({ roomId, notation: notation.trim(), secret });
-            }}
-          >
-            <CardContent className="border-t py-2">
-              <Input
-                ref={inputRef}
-                aria-label="Dice notation"
-                type="text"
-                spellCheck={false}
-                autoComplete="off"
-                placeholder="2d20kh1, 4d6!, 3d6+2"
-                value={notation}
-                onChange={(e) => setNotation(e.target.value)}
-              />
-            </CardContent>
-            <CardContent className="flex items-center border-t py-2">
-              <Label htmlFor="dice-secret" className="flex items-center gap-1.5">
-                <Checkbox
-                  id="dice-secret"
-                  checked={secret}
-                  onCheckedChange={(v) => setSecret(v === true)}
+        <div
+          className={`grid transition-all duration-300 ease-out motion-reduce:transition-none ${
+            panelOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+          }`}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (submit.isPending || notation.trim() === "") return;
+                // Server parses and rolls; syntax errors surface as a toast.
+                submit.mutate({ roomId, notation: notation.trim(), secret });
+              }}
+            >
+              <CardContent className="border-t py-2">
+                <Input
+                  ref={inputRef}
+                  aria-label="Dice notation"
+                  type="text"
+                  spellCheck={false}
+                  autoComplete="off"
+                  placeholder="2d20kh1, 4d6!, 3d6+2"
+                  value={notation}
+                  onChange={(e) => setNotation(e.target.value)}
                 />
-                Secret
-              </Label>
-              <Button className="ml-auto" type="submit" disabled={submit.isPending}>
-                Roll
-              </Button>
-            </CardContent>
-          </form>
-        )}
+              </CardContent>
+              <CardContent className="flex items-center border-t py-2">
+                <Label htmlFor="dice-secret" className="flex items-center gap-1.5">
+                  <Checkbox
+                    id="dice-secret"
+                    checked={secret}
+                    onCheckedChange={(v) => setSecret(v === true)}
+                  />
+                  Secret
+                </Label>
+                <Button className="ml-auto" type="submit" disabled={submit.isPending}>
+                  Roll
+                </Button>
+              </CardContent>
+            </form>
+          </div>
+        </div>
       </Card>
     </>
   );

@@ -26,15 +26,14 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
 import { Check, Copy, Keyboard, LogOut, Menu, Moon, Rows3, Sun } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 import { authClient } from "@/lib/auth-client";
 import { randomUserColor, USER_PALETTE, userColor } from "@/utils/user-color";
-import { trpc } from "@/utils/trpc";
-import { forwardToolToSheet, setSheetFocused } from "./canvas-focus";
+import { queryClient, trpc } from "@/utils/trpc";
 import ShortcutsDialog from "./shortcuts-dialog";
 
 export type RoomMenuInfo = {
@@ -43,6 +42,10 @@ export type RoomMenuInfo = {
   role: "master" | "player";
   inviteToken: string | null;
 };
+
+// Raio do hexagono da grade (centro ao vertice, em unidades de cena).
+// 52 da hexes de ~90px de largura em zoom 1, uma escala usual de mesa.
+const HEX_RADIUS = 52;
 
 export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
   const { resolvedTheme } = useTheme();
@@ -55,6 +58,15 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
   const pointerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSentVersion = useRef<number | null>(null);
   const applyingRemote = useRef(false);
+  const dirtyRef = useRef(false);
+  const pendingRef = useRef<{
+    elements: { version: number }[];
+    files: Record<string, unknown>;
+  } | null>(null);
+  // Latched from the first server response (see the effect below). Seeding
+  // lastSentVersion with it skips the onChange echo on mount, and the count
+  // guard in pushNow stops a transient empty read from wiping real content.
+  const baselineRef = useRef<{ version: number; count: number } | null>(null);
   const collaborators = useRef(
     new Map<string, { username: string; color: string; x: number; y: number; tx: number; ty: number; at: number; tool: "pointer" | "laser"; button: "up" | "down" }>(),
   );
@@ -64,6 +76,119 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
   >([]);
   const [initialElements, setInitialElements] = useState<unknown[] | null>(null);
   const [initialFiles, setInitialFiles] = useState<Record<string, unknown> | null>(null);
+  // Camera da cena (scroll + zoom). A grade de hexagonos e desenhada por
+  // escrita direta no DOM (refs), fora do render do React: atualizar via
+  // setState atrasa um frame em relacao ao canvas e a grade parece flutuar.
+  const gridSvgRef = useRef<SVGSVGElement | null>(null);
+  const gridPathRef = useRef<SVGPathElement | null>(null);
+  const gridSizeRef = useRef({ w: 0, h: 0 });
+  const gridCamRef = useRef({ scrollX: 0, scrollY: 0, zoom: 1 });
+  const gridLoopRef = useRef<number | null>(null);
+
+  function paintGrid(scrollX: number, scrollY: number, zoom: number) {
+    gridCamRef.current = { scrollX, scrollY, zoom };
+    const path = gridPathRef.current;
+    const svg = gridSvgRef.current;
+    if (!path || !svg) return;
+    const { w, h } = gridSizeRef.current;
+    if (w <= 0 || h <= 0 || zoom <= 0) {
+      path.setAttribute("d", "");
+      return;
+    }
+    const radius = HEX_RADIUS;
+    const hexW = Math.sqrt(3) * radius;
+    const rowStep = 1.5 * radius;
+    if (hexW * zoom < 12) {
+      path.setAttribute("d", "");
+      return;
+    }
+    const sceneX0 = -scrollX - hexW;
+    const sceneX1 = -scrollX + w / zoom + hexW;
+    const sceneY0 = -scrollY - radius * 2;
+    const sceneY1 = -scrollY + h / zoom + radius * 2;
+    const row0 = Math.floor(sceneY0 / rowStep);
+    const row1 = Math.ceil(sceneY1 / rowStep);
+    if (row1 - row0 > 400) {
+      path.setAttribute("d", "");
+      return;
+    }
+    const cos30 = Math.sqrt(3) / 2;
+    const sin30 = 0.5;
+    const corners: [number, number][] = [
+      [cos30, sin30],
+      [0, 1],
+      [-cos30, sin30],
+      [-cos30, -sin30],
+      [0, -1],
+      [cos30, -sin30],
+    ];
+    let d = "";
+    for (let row = row0; row <= row1; row += 1) {
+      const cy = row * rowStep;
+      const offsetX = Math.abs(row % 2) === 1 ? hexW / 2 : 0;
+      const col0 = Math.floor((sceneX0 - offsetX) / hexW);
+      const col1 = Math.ceil((sceneX1 - offsetX) / hexW);
+      if (col1 - col0 > 400) {
+        path.setAttribute("d", "");
+        return;
+      }
+      for (let col = col0; col <= col1; col += 1) {
+        const cx = col * hexW + offsetX;
+        const vx0 = (cx + scrollX) * zoom;
+        const vy0 = (cy + scrollY) * zoom;
+        const rr = radius * zoom;
+        for (let i = 0; i < 6; i += 1) {
+          const [ux, uy] = corners[i];
+          const px = vx0 + ux * rr;
+          const py = vy0 + uy * rr;
+          d += i === 0 ? `M${px.toFixed(1)} ${py.toFixed(1)}` : `L${px.toFixed(1)} ${py.toFixed(1)}`;
+        }
+        d += "Z";
+      }
+    }
+    if (path.getAttribute("d") !== d) path.setAttribute("d", d);
+  }
+
+  function handleViewChange(appState: unknown) {
+    const state = appState as { scrollX?: number; scrollY?: number; zoom?: { value: number } };
+    paintGrid(state.scrollX ?? 0, state.scrollY ?? 0, state.zoom?.value ?? 1);
+  }
+
+  function syncViewFromApi() {
+    try {
+      const appState = apiRef.current?.getAppState() as
+        | { scrollX?: number; scrollY?: number; zoom?: { value: number } }
+        | undefined;
+      if (appState) handleViewChange(appState);
+    } catch {
+      // Grade e decorativa.
+    }
+  }
+
+  function startGridLoop() {
+    if (gridLoopRef.current !== null) return;
+    const tick = () => {
+      gridLoopRef.current = requestAnimationFrame(tick);
+      try {
+        const appState = apiRef.current?.getAppState() as
+          | { scrollX?: number; scrollY?: number; zoom?: { value: number } }
+          | undefined;
+        if (!appState) return;
+        const next = {
+          scrollX: appState.scrollX ?? 0,
+          scrollY: appState.scrollY ?? 0,
+          zoom: appState.zoom?.value ?? 1,
+        };
+        const prev = gridCamRef.current;
+        if (prev.scrollX !== next.scrollX || prev.scrollY !== next.scrollY || prev.zoom !== next.zoom) {
+          paintGrid(next.scrollX, next.scrollY, next.zoom);
+        }
+      } catch {
+        // Grade e decorativa.
+      }
+    };
+    gridLoopRef.current = requestAnimationFrame(tick);
+  }
 
   useEffect(() => {
     if (sceneQuery.data && initialElements === null && initialFiles === null) {
@@ -72,44 +197,182 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
           elements?: unknown;
           files?: unknown;
         };
-        setInitialElements(Array.isArray(parsed.elements) ? parsed.elements : []);
-        setInitialFiles(
+        const elements = Array.isArray(parsed.elements) ? parsed.elements : [];
+        const files =
           parsed.files && typeof parsed.files === "object" && !Array.isArray(parsed.files)
             ? (parsed.files as Record<string, unknown>)
-            : {},
-        );
+            : {};
+        setInitialElements(elements);
+        setInitialFiles(files);
+        baselineRef.current = {
+          version: getSceneVersion(elements as never),
+          count: elements.length,
+        };
+        lastSentVersion.current = baselineRef.current.version;
       } catch {
         setInitialElements([]);
         setInitialFiles({});
+        baselineRef.current = { version: getSceneVersion([] as never), count: 0 };
+        lastSentVersion.current = baselineRef.current.version;
       }
     }
   }, [sceneQuery.data, initialElements, initialFiles]);
+
+  function pushNow() {
+    // Reads the snapshot taken during onChange, never the live API: on
+    // unmount the Excalidraw instance may already be torn down, and reading
+    // it then can return an empty scene that would overwrite real content.
+    const snap = pendingRef.current;
+    pendingRef.current = null;
+    if (!snap) return;
+    const version = getSceneVersion(snap.elements as never);
+    if (lastSentVersion.current === version) return;
+    if (snap.elements.length === 0 && (baselineRef.current?.count ?? 0) > 0) return;
+    lastSentVersion.current = version;
+    const scene = JSON.stringify({ elements: snap.elements, files: snap.files });
+    pushScene.mutate(
+      { roomId: room.id, elements: snap.elements as never, files: snap.files as never },
+      {
+        // Keep the query cache in sync with what was saved, so a future
+        // mount starts from this content instead of a stale copy.
+        onSuccess: () => {
+          queryClient.setQueryData(trpc.canvas.getScene.queryKey({ roomId: room.id }), (old) =>
+            old ? { ...old, scene } : old,
+          );
+        },
+      },
+    );
+  }
 
   function queuePush() {
     if (pushTimer.current) return;
     pushTimer.current = setTimeout(() => {
       pushTimer.current = null;
-      const api = apiRef.current;
-      if (!api) return;
-      try {
-        const elements = api.getSceneElementsIncludingDeleted();
-        const version = getSceneVersion(elements as never);
-        if (lastSentVersion.current === version) return;
-        lastSentVersion.current = version;
-        pushScene.mutate({ roomId: room.id, elements: elements as never, files: api.getFiles() as never });
-      } catch {
-        // Best effort sync.
-      }
+      pushNow();
     }, 400);
   }
 
+  function handleLocalChange() {
+    const api = apiRef.current;
+    if (!api) return;
+    let elements: { version: number }[];
+    let files: Record<string, unknown>;
+    try {
+      // IncludingDeleted keeps tombstones so deletions propagate to the
+      // other side instead of being resurrected by reconcile.
+      elements = api.getSceneElementsIncludingDeleted();
+      files = api.getFiles() as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if (lastSentVersion.current === getSceneVersion(elements as never)) return;
+    pendingRef.current = { elements, files: files ?? {} };
+    dirtyRef.current = true;
+    queuePush();
+  }
+
+  // Latest server copy. Stored on every query change and applied when the
+  // user has no local edits, including the case where the data arrives
+  // before the Excalidraw API is ready (applied from the api callback then).
+  const serverSceneRef = useRef<{ elements: unknown; files: unknown; version: number } | null>(null);
+
+  function applyServerSceneIfClean() {
+    const server = serverSceneRef.current;
+    if (!server || dirtyRef.current || applyingRemote.current || !apiRef.current) return;
+    if (server.version === lastSentVersion.current) return;
+    applyRemoteScene(server.elements, server.files);
+  }
+
+  function applyRemoteScene(elements: unknown, files: unknown) {
+    const api = apiRef.current;
+    if (!api || !Array.isArray(elements)) return;
+    try {
+      applyingRemote.current = true;
+      if (files && typeof files === "object") {
+        const list = Object.values(files as Record<string, unknown>).filter(
+          (f): f is { id: string; dataURL: string } =>
+            !!f && typeof f === "object" && typeof (f as { id?: unknown }).id === "string",
+        );
+        if (list.length > 0) {
+          api.addFiles(list as never);
+        }
+      }
+      const local = api.getSceneElementsIncludingDeleted();
+      const reconciled = reconcileElements(
+        local as never,
+        elements as never,
+        api.getAppState() as never,
+      );
+      api.updateScene({ elements: reconciled, captureUpdate: CaptureUpdateAction.NEVER });
+      lastSentVersion.current = getSceneVersion(reconciled as never);
+    } catch {
+      // Keep local scene on merge failure.
+    } finally {
+      applyingRemote.current = false;
+    }
+  }
+
+  // Fresh server data that arrives after mount (background refetch over a
+  // stale cache, reconnect, focus) applies itself while the user has no
+  // local edits. Without this the mounted scene keeps stale content and the
+  // next autosave overwrites the newer server copy.
+  useEffect(() => {
+    if (!sceneQuery.data || initialElements === null) return;
+    try {
+      const parsed = JSON.parse(sceneQuery.data.scene) as { elements?: unknown; files?: unknown };
+      if (!Array.isArray(parsed.elements)) return;
+      serverSceneRef.current = {
+        elements: parsed.elements,
+        files: parsed.files,
+        version: getSceneVersion(parsed.elements as never),
+      };
+      applyServerSceneIfClean();
+    } catch {
+      // Keep local scene on parse failure.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneQuery.data]);
+
   useEffect(() => {
     return () => {
-      if (pushTimer.current) clearTimeout(pushTimer.current);
+      if (pushTimer.current) {
+        clearTimeout(pushTimer.current);
+        pushTimer.current = null;
+        pushNow();
+      }
       if (pointerTimer.current) clearTimeout(pointerTimer.current);
       if (smoothTimer.current) clearInterval(smoothTimer.current);
+      if (gridLoopRef.current !== null) cancelAnimationFrame(gridLoopRef.current);
+      gridLoopRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Tamanho do container para a grade saber quantos hexagonos desenhar.
+  // Depende dos dados iniciais porque antes deles o container nem existe
+  // (early return de loading), e o efeito com [] nunca religaria o observer.
+  // Escreve direto no DOM para nao passar pelo render do React no pan.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      const w = Math.round(rect.width);
+      const h = Math.round(rect.height);
+      const prev = gridSizeRef.current;
+      if (prev.w === w && prev.h === h) return;
+      gridSizeRef.current = { w, h };
+      gridSvgRef.current?.setAttribute("width", String(w));
+      gridSvgRef.current?.setAttribute("height", String(h));
+      const cam = gridCamRef.current;
+      paintGrid(cam.scrollX, cam.scrollY, cam.zoom);
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialElements, initialFiles]);
 
   useSubscription(
     trpc.canvas.onScene.subscriptionOptions(
@@ -117,32 +380,7 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
       {
         onData: (envelope) => {
           const remote = envelope.data as { elements?: unknown; files?: unknown };
-          const api = apiRef.current;
-          if (!api || !Array.isArray(remote.elements)) return;
-          try {
-            applyingRemote.current = true;
-            if (remote.files && typeof remote.files === "object") {
-              const list = Object.values(remote.files as Record<string, unknown>).filter(
-                (f): f is { id: string; dataURL: string } =>
-                  !!f && typeof f === "object" && typeof (f as { id?: unknown }).id === "string",
-              );
-              if (list.length > 0) {
-                api.addFiles(list as never);
-              }
-            }
-            const local = api.getSceneElementsIncludingDeleted();
-            const reconciled = reconcileElements(
-              local as never,
-              remote.elements as never,
-              api.getAppState() as never,
-            );
-            api.updateScene({ elements: reconciled, captureUpdate: CaptureUpdateAction.NEVER });
-            lastSentVersion.current = getSceneVersion(reconciled as never);
-          } catch {
-            // Keep local scene on merge failure.
-          } finally {
-            applyingRemote.current = false;
-          }
+          applyRemoteScene(remote.elements, remote.files);
         },
       },
     ),
@@ -302,7 +540,7 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
     pointerTimer.current = setTimeout(() => {
       pointerTimer.current = null;
       sendPointer(clientX, clientY, rect, pressed);
-    }, 50);
+    }, 150);
   }
 
   function handlePointerButton(e: React.PointerEvent<HTMLDivElement>, pressed: boolean) {
@@ -313,63 +551,83 @@ export default function RoomCanvas({ room }: { room: RoomMenuInfo }) {
     sendPointer(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), pressed);
   }
 
+  const dark = resolvedTheme === "dark";
+  const gridColor = dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.10)";
+
+  // Mantem o stroke em dia quando o tema muda (o path e pintado por ref).
+  // Fica antes do return antecipado: hook depois de return condicional
+  // quebra a ordem dos hooks entre renders.
+  useEffect(() => {
+    gridPathRef.current?.setAttribute("stroke", gridColor);
+  }, [gridColor]);
+
   if (sceneQuery.isLoading || initialElements === null || initialFiles === null) {
     return <div className="h-full w-full" />;
   }
-
-  const dark = resolvedTheme === "dark";
-  const dot = dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.12)";
 
   return (
     <div
       ref={containerRef}
       className="room-canvas relative h-full w-full"
-      style={{
-        backgroundImage: `radial-gradient(circle, ${dot} 1.2px, transparent 1.2px)`,
-        backgroundSize: "24px 24px",
-      }}
       onPointerMove={handlePointerMove}
       onPointerDown={(e) => handlePointerButton(e, true)}
       onPointerUp={(e) => handlePointerButton(e, false)}
-      onPointerDownCapture={(e) => {
-        // Toolbar clicks keep the current focus so the main toolbar
-        // can drive the private canvas. Canvas clicks take focus back.
-        const target = e.target as HTMLElement | null;
-        if (target?.closest?.(".App-toolbar")) return;
-        setSheetFocused(false);
-      }}
     >
-      <Excalidraw
-        theme={resolvedTheme === "dark" ? THEME.DARK : THEME.LIGHT}
-        validateEmbeddable={true}
-        renderTopRightUI={() => null}
-        excalidrawAPI={(api) => {
-          apiRef.current = api as unknown as RoomCanvasApi;
-        }}
-        initialData={{
-          elements: restoreElements(initialElements as never, null),
-          files: initialFiles as never,
-          appState: { viewBackgroundColor: "transparent" },
-        }}
-        onChange={(elements, appState, files) => {
-          if (applyingRemote.current) return;
-          forwardToolToSheet(appState.activeTool?.type ?? "selection", appState.activeTool?.locked ?? false);
-          queuePush();
-          void files;
-        }}
-        UIOptions={{
-          canvasActions: {
-            changeViewBackgroundColor: false,
-            clearCanvas: false,
-            export: false,
-            loadScene: false,
-            saveToActiveFile: false,
-            toggleTheme: false,
-            saveAsImage: false,
-          },
-        }}
-      />
-      <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
+      {/* Grade por baixo do canvas: o fundo do Excalidraw e transparente
+          (ver room-canvas.css) e o path e pintado por ref a cada frame,
+          sem passar pelo React. Elementos da cena cobrem a grade. */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <svg ref={gridSvgRef} className="block">
+          <path
+            ref={gridPathRef}
+            fill="none"
+            stroke={gridColor}
+            strokeWidth={1}
+            strokeOpacity={0.5}
+          />
+        </svg>
+      </div>
+      <div className="absolute inset-0">
+        <Excalidraw
+          theme={resolvedTheme === "dark" ? THEME.DARK : THEME.LIGHT}
+          validateEmbeddable={true}
+          renderTopRightUI={() => null}
+          excalidrawAPI={(api) => {
+            apiRef.current = api as unknown as RoomCanvasApi;
+            // The server copy may have arrived before the API was ready.
+            applyServerSceneIfClean();
+            syncViewFromApi();
+            startGridLoop();
+          }}
+          initialData={{
+            elements: restoreElements(initialElements as never, null),
+            files: initialFiles as never,
+            appState: { viewBackgroundColor: "transparent" },
+          }}
+          onChange={(elements, appState, files) => {
+            if (applyingRemote.current) {
+              handleViewChange(appState);
+              return;
+            }
+            handleLocalChange();
+            handleViewChange(appState);
+            void elements;
+            void files;
+          }}
+          UIOptions={{
+            canvasActions: {
+              changeViewBackgroundColor: false,
+              clearCanvas: false,
+              export: false,
+              loadScene: false,
+              saveToActiveFile: false,
+              toggleTheme: false,
+              saveAsImage: false,
+            },
+          }}
+        />
+      </div>
+      <div className="pointer-events-none absolute inset-0 z-[2] overflow-hidden">
         {overlays.map((o) => (
           <div
             key={o.id}
@@ -445,7 +703,14 @@ function RoomMenu({ room }: { room: RoomMenuInfo }) {
 
   const setColor = useMutation(
     trpc.profile.setColor.mutationOptions({
-      onSuccess: () => refetch(),
+      onSuccess: () => {
+        void refetch();
+        // Atualiza a lista de players na hora: sem isso o RosterPanel
+        // mantém a cor antiga até o próximo polling.
+        void queryClient.invalidateQueries({
+          queryKey: trpc.characters.members.queryKey(),
+        });
+      },
     }),
   );
 

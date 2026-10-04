@@ -2,23 +2,25 @@ import { Lock } from "lucide-react";
 import { useEffect } from "react";
 
 import { Card, CardContent } from "@chimera2/ui/components/card";
+import { playDicePopupSound } from "@/utils/dice-popup-sound";
 
 import { impliedModifier, type RoomEvent } from "./room-events";
 
 const POPUP_TTL_MS = 4000;
 const MAX_VISIBLE = 3;
 
-function DiceBreakdown({ event }: { event: RoomEvent }) {
+function DiceBreakdown({ event, liveColor }: { event: RoomEvent; liveColor?: string | null }) {
   const p = event.payload;
   if (p.kind !== "dice_roll") return null;
   const modifier = p.groups ? impliedModifier(p) : (p.modifier ?? 0);
+  const displayColor = liveColor ?? p.authorColor;
 
   return (
     <div className="flex flex-col gap-1">
       <span className="flex items-center gap-1.5 text-xs font-semibold">
         <span
           className="inline-block size-2 rounded-full"
-          style={{ backgroundColor: p.authorColor ?? "var(--muted-foreground)" }}
+          style={{ backgroundColor: displayColor ?? "var(--muted-foreground)" }}
         />
         {p.author}
         {event.secret && (
@@ -71,7 +73,7 @@ function DiceBreakdown({ event }: { event: RoomEvent }) {
       )}
       <div className="flex items-baseline gap-1.5">
         <span className="text-muted-foreground">=</span>
-        <span className="text-lg leading-none font-bold">{p.total}</span>
+        <span className="text-xl leading-none font-bold">{p.total}</span>
         {p.successes !== null && p.successes !== undefined && (
           <span className="text-xs font-normal text-muted-foreground">
             ({p.successes} {p.successes === 1 ? "success" : "successes"})
@@ -82,19 +84,31 @@ function DiceBreakdown({ event }: { event: RoomEvent }) {
   );
 }
 
-function PopupCard({ event, onDismiss }: { event: RoomEvent; onDismiss: (id: number) => void }) {
+function PopupCard({
+  event,
+  liveColor,
+  onDismiss,
+}: {
+  event: RoomEvent;
+  liveColor?: string | null;
+  onDismiss: (id: number) => void;
+}) {
+  // Hook antes do return antecipado: hook depois de return condicional
+  // quebra a ordem dos hooks entre renders.
+  useEffect(() => {
+    if (event.payload.kind !== "dice_roll") return;
+    playDicePopupSound();
+    const t = setTimeout(() => onDismiss(event.id), POPUP_TTL_MS);
+    return () => clearTimeout(t);
+  }, [event.id, event.payload, onDismiss]);
+
   const p = event.payload;
   if (p.kind !== "dice_roll") return null;
 
-  useEffect(() => {
-    const t = setTimeout(() => onDismiss(event.id), POPUP_TTL_MS);
-    return () => clearTimeout(t);
-  }, [event.id, onDismiss]);
-
   return (
-    <Card size="sm" className="pointer-events-none w-auto max-w-80 py-0 shadow-lg">
-      <CardContent className="py-1.5">
-        <DiceBreakdown event={event} />
+    <Card size="sm" className="pointer-events-none w-auto max-w-96 py-1 shadow-lg">
+      <CardContent className="py-2.5">
+        <DiceBreakdown event={event} liveColor={liveColor} />
       </CardContent>
     </Card>
   );
@@ -102,19 +116,26 @@ function PopupCard({ event, onDismiss }: { event: RoomEvent; onDismiss: (id: num
 
 export default function DiceResultPopupStack({
   popups,
+  colorByUserId,
   onDismiss,
 }: {
   popups: RoomEvent[];
+  colorByUserId?: Map<string, string | null>;
   onDismiss: (id: number) => void;
 }) {
   if (popups.length === 0) return null;
   const visible = [...popups].reverse().slice(0, MAX_VISIBLE);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-[84px] z-40 flex justify-center">
+    <div className="pointer-events-none absolute inset-x-0 top-[104px] z-40 flex justify-center">
       <div className="flex flex-col items-center gap-1.5">
         {visible.map((event) => (
-          <PopupCard key={event.id} event={event} onDismiss={onDismiss} />
+          <PopupCard
+            key={event.id}
+            event={event}
+            liveColor={event.actorId ? (colorByUserId?.get(event.actorId) ?? undefined) : undefined}
+            onDismiss={onDismiss}
+          />
         ))}
       </div>
     </div>

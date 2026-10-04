@@ -6,17 +6,20 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@chimera2/
 import { Empty, EmptyDescription } from "@chimera2/ui/components/empty";
 import { impliedModifier, type RoomEvent } from "./room-events";
 
-function EventLine({ event }: { event: RoomEvent }) {
+function EventLine({ event, liveColor }: { event: RoomEvent; liveColor?: string | null }) {
   const p = event.payload;
 
   if (p.kind === "dice_roll") {
     const modifier = p.groups ? impliedModifier(p) : (p.modifier ?? 0);
+    // Recolorir retroativo: a cor viva do membro prevalece sobre o snapshot
+    // gravado no payload na hora da rolagem.
+    const displayColor = liveColor ?? p.authorColor;
     return (
       <span>
-        {p.authorColor && (
+        {displayColor && (
           <span
             className="mr-1 inline-block size-2 rounded-full align-middle"
-            style={{ backgroundColor: p.authorColor }}
+            style={{ backgroundColor: displayColor }}
           />
         )}
         <span className="font-semibold">{p.author}</span>{" "}
@@ -93,27 +96,27 @@ function EventLine({ event }: { event: RoomEvent }) {
   );
 }
 
-export default function HistoryOverlay({ events }: { events: RoomEvent[] }) {
+export default function HistoryOverlay({
+  events,
+  colorByUserId,
+}: {
+  events: RoomEvent[];
+  colorByUserId?: Map<string, string | null>;
+}) {
   const [open, setOpen] = useState(true);
-
-  if (!open) {
-    return (
-      <Button
-        variant="outline"
-        size="icon"
-        aria-label="Show history"
-        className="pointer-events-auto absolute bottom-3 left-3 shadow-md"
-        onClick={() => setOpen(true)}
-      >
-        <History className="size-4" />
-      </Button>
-    );
-  }
 
   const newestFirst = [...events].reverse();
 
   return (
-    <Card className="pointer-events-auto absolute bottom-3 left-3 flex h-[282px] w-72 flex-col gap-0 py-0 shadow-md">
+    <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+      <Card
+        inert={!open}
+        className={`pointer-events-auto flex h-[282px] w-72 origin-bottom-left flex-col gap-0 py-0 shadow-md transition-all duration-300 ease-out motion-reduce:transition-none ${
+          open
+            ? "translate-y-0 scale-100 opacity-100"
+            : "pointer-events-none translate-y-2 scale-95 opacity-0"
+        }`}
+      >
       <CardHeader className="py-2">
         <CardTitle className="flex items-center gap-2">
           <History className="size-4" />
@@ -135,7 +138,10 @@ export default function HistoryOverlay({ events }: { events: RoomEvent[] }) {
           <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
             {newestFirst.map((event) => (
               <li key={event.id} className="text-xs leading-snug text-card-foreground">
-                <EventLine event={event} />
+                <EventLine
+                  event={event}
+                  liveColor={event.actorId ? (colorByUserId?.get(event.actorId) ?? undefined) : undefined}
+                />
               </li>
             ))}
           </ul>
@@ -145,6 +151,21 @@ export default function HistoryOverlay({ events }: { events: RoomEvent[] }) {
           </Empty>
         )}
       </CardContent>
-    </Card>
+      </Card>
+      <Button
+        variant="outline"
+        size="icon"
+        aria-label="Show history"
+        inert={open}
+        onClick={() => setOpen(true)}
+        className={`pointer-events-auto absolute bottom-0 left-0 shadow-md transition-all duration-300 ease-out motion-reduce:transition-none ${
+          open
+            ? "pointer-events-none translate-y-2 scale-90 opacity-0"
+            : "translate-y-0 scale-100 opacity-100"
+        }`}
+      >
+        <History className="size-4" />
+      </Button>
+    </div>
   );
 }

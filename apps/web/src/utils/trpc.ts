@@ -42,6 +42,10 @@ export const queryClient = new QueryClient({
 
 const httpLink = httpBatchLink({
   url: `${getServerUrl(ENV.VITE_SERVER_URL)}/trpc`,
+  // Queries go as POST body instead of URL params, so batched calls
+  // can never hit 414 URI Too Long. Requires `allowMethodOverride`
+  // on the server (see apps/server/src/index.ts).
+  methodOverride: "POST",
   fetch(url, options) {
     return fetch(url, {
       ...options,

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, User } from "lucide-react";
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useState } from "react";
 
 import { Button } from "@chimera2/ui/components/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@chimera2/ui/components/card";
@@ -11,17 +11,18 @@ import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
 
 import { parseSheetScene } from "./sheet-scene";
-import { setPrivateOpen, setSheetFocused } from "./canvas-focus";
 
 const SheetCanvas = lazy(() => import("./sheet-canvas"));
 
 export default function CharacterSheetPanel({
   roomId,
   role,
+  open = true,
   onClose,
 }: {
   roomId: string;
   role: "master" | "player";
+  open?: boolean;
   onClose: () => void;
 }) {
   const { data: session } = authClient.useSession();
@@ -42,12 +43,11 @@ export default function CharacterSheetPanel({
     ),
   );
 
-  useEffect(() => {
-    setPrivateOpen(true);
-    void sheetQuery.refetch();
-    return () => setPrivateOpen(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // The query fetches on mount by itself. A manual refetch here used to
+  // resolve after SheetCanvas had already mounted with cached data, and
+  // Excalidraw ignores prop updates to initialData, so the fresher copy was
+  // silently dropped and the next autosave overwrote it with stale content.
+  // (SheetCanvas also heals this case now via its apply-if-clean effect.)
 
   const templateUrl = template.data?.url ? `${ENV.VITE_SERVER_URL}${template.data.url}` : null;
   const scene = sheetQuery.data ? parseSheetScene(sheetQuery.data.scene) : null;
@@ -66,7 +66,12 @@ export default function CharacterSheetPanel({
           </Button>
         </CardAction>
       </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col space-y-2 overflow-hidden border-t py-3">
+      <CardContent
+        inert={!open}
+        className={`flex min-h-0 flex-1 flex-col space-y-2 overflow-hidden border-t py-3 transition-all duration-300 ease-out motion-reduce:transition-none ${
+          open ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-4 opacity-0"
+        }`}
+      >
         {role === "master" && (
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <Label htmlFor="sheet-viewing">Viewing</Label>
@@ -93,10 +98,7 @@ export default function CharacterSheetPanel({
         {sheetQuery.isLoading || !scene || !viewingUserId ? (
           <Skeleton className="min-h-0 w-full flex-1" />
         ) : (
-          <div
-            className="flex min-h-0 flex-1 flex-col"
-            onPointerDownCapture={() => setSheetFocused(true)}
-          >
+          <div className="flex min-h-0 flex-1 flex-col">
             <Suspense fallback={<Skeleton className="min-h-0 w-full flex-1" />}>
               <SheetCanvas
                 key={viewingUserId}

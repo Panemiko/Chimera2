@@ -1,10 +1,11 @@
 /* Experiment: bridge app tokens from @chimera2/ui globals.css into Excalidraw.
-   Scoped to .room-canvas so the private sheet canvas keeps native styling.
+   Scoped to the room board and the private sheet canvas, so both share
+   the same toolbar and properties styling.
    Load order matters: room-canvas.tsx imports excalidraw index.css first,
    then this file, so these values win on tied specificity.
    Light and dark both work because var(--popover) etc. already flip under .dark. */
 
-.room-canvas .excalidraw {
+:is(.room-canvas, .sheet-canvas) .excalidraw {
   --ui-font: "Inter Variable", system-ui, sans-serif;
 
   --border-radius-lg: var(--radius);
@@ -88,7 +89,7 @@
 }
 
 /* Toolbar island: card surface with app border, no heavy Excalidraw shadow */
-.room-canvas .excalidraw .Island {
+:is(.room-canvas, .sheet-canvas) .excalidraw .Island {
   border: 1px solid var(--border);
   box-shadow:
     0 1px 2px 0 rgb(0 0 0 / 0.06),
@@ -96,8 +97,8 @@
 }
 
 /* Active tool reads as selected: accent fill, foreground icon */
-.room-canvas .excalidraw .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon,
-.room-canvas .excalidraw .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon {
+:is(.room-canvas, .sheet-canvas) .excalidraw .ToolIcon .ToolIcon_type_radio:checked + .ToolIcon__icon,
+:is(.room-canvas, .sheet-canvas) .excalidraw .ToolIcon .ToolIcon_type_checkbox:checked + .ToolIcon__icon {
   background: var(--accent);
   border: 1px solid var(--ring);
   --icon-fill-color: var(--accent-foreground);
@@ -105,26 +106,26 @@
 }
 
 /* Properties sidebar: popover surface, app text, heading font */
-.room-canvas .excalidraw .sidebar,
-.room-canvas .excalidraw .default-sidebar {
+:is(.room-canvas, .sheet-canvas) .excalidraw .sidebar,
+:is(.room-canvas, .sheet-canvas) .excalidraw .default-sidebar {
   background-color: var(--popover);
   color: var(--popover-foreground);
   border-left: 1px solid var(--border);
   font-family: "Inter Variable", system-ui, sans-serif;
 }
 
-.room-canvas .excalidraw .panelColumn h3,
-.room-canvas .excalidraw .panelColumn legend {
+:is(.room-canvas, .sheet-canvas) .excalidraw .panelColumn h3,
+:is(.room-canvas, .sheet-canvas) .excalidraw .panelColumn legend {
   font-family: "Montserrat Variable", sans-serif;
   color: var(--foreground);
 }
 
-.room-canvas .excalidraw .panelColumn .control-label,
-.room-canvas .excalidraw .panelColumn fieldset {
+:is(.room-canvas, .sheet-canvas) .excalidraw .panelColumn .control-label,
+:is(.room-canvas, .sheet-canvas) .excalidraw .panelColumn fieldset {
   border-color: var(--border);
 }
 
-.room-canvas .excalidraw .excalidraw-tooltip {
+:is(.room-canvas, .sheet-canvas) .excalidraw .excalidraw-tooltip {
   --ui-font: "Inter Variable", system-ui, sans-serif;
 }
 
@@ -132,6 +133,6 @@
    dark there. Bright lavender keeps the selection outline and handles
    readable. Higher specificity beats both our base rule and Excalidraw
    natives. */
-.room-canvas .excalidraw.theme--dark {
+:is(.room-canvas, .sheet-canvas) .excalidraw.theme--dark {
   --color-selection: #a8a5ff;
 }

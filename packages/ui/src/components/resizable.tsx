@@ -2,6 +2,8 @@ import { cn } from "cn"
 import * as ResizablePrimitive from "react-resizable-panels"
 
 export const useResizableLayout = ResizablePrimitive.useDefaultLayout
+export const usePanelRef = ResizablePrimitive.usePanelRef
+export type { PanelImperativeHandle } from "react-resizable-panels"
 
 function ResizablePanelGroup({
   className,

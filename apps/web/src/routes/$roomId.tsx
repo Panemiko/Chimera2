@@ -9,6 +9,7 @@ import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
+  usePanelRef,
   useResizableLayout,
 } from "@chimera2/ui/components/resizable";
 import { Button } from "@chimera2/ui/components/button";
@@ -58,18 +59,30 @@ export default function Room() {
   const [mounted, setMounted] = useState(false);
   const [privateOpen, setPrivateOpen] = useState(false);
   const [privateSize, setPrivateSize] = useState("30%");
+  // The private panel stays mounted for the whole room session (collapsed
+  // when closed) so its canvas never loses state on fast open/close and
+  // keeps receiving remote scenes in the background.
+  const privatePanelRef = usePanelRef();
 
   const room = useQuery(trpc.rooms.get.queryOptions({ id: roomId ?? "" }, { enabled: !!session && !!roomId }));
 
   const { defaultLayout, onLayoutChanged } = useResizableLayout({
     id: "chimera2:room-split",
-    panelIds: privateOpen ? ["global", "private"] : ["global"],
+    panelIds: ["global", "private"],
     storage: layoutStore,
   });
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (privateOpen) {
+      privatePanelRef.current?.expand();
+    } else {
+      privatePanelRef.current?.collapse();
+    }
+  }, [privateOpen, privatePanelRef]);
 
   useEffect(() => {
     if (!isPending && !session) {
@@ -140,7 +153,9 @@ export default function Room() {
         onLayoutChanged={(layout, meta) => {
           onLayoutChanged(layout, meta);
           const next = layout.private;
-          if (typeof next === "number" && Number.isFinite(next)) {
+          // Ignore the collapsed state so reopening restores the last
+          // visible size instead of 0%.
+          if (typeof next === "number" && Number.isFinite(next) && next > 1) {
             setPrivateSize(`${next}%`);
           }
         }}
@@ -149,6 +164,7 @@ export default function Room() {
           <div className="relative h-full w-full min-w-0 overflow-hidden">
             <Suspense fallback={<div className="h-full w-full" />}>
               <RoomCanvas
+                key={roomData.id}
                 room={{
                   id: roomData.id,
                   name: roomData.name,
@@ -158,47 +174,59 @@ export default function Room() {
               />
             </Suspense>
             <RoomOverlays roomId={roomData.id} role={roomData.role} />
-            {!privateOpen && (
-              <div className="pointer-events-auto absolute top-3 right-3 z-10">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label="Open private space"
-                  className="gap-2 shadow-md"
-                  onClick={() => {
-                    setPrivateOpen(true);
-                  }}
-                >
-                  <User className="size-4" />
-                  Private space
-                  <span className="rounded border px-1 font-mono text-[10px] text-muted-foreground">
-                    C
-                  </span>
-                </Button>
-              </div>
-            )}
+            <div
+              inert={privateOpen}
+              className={`pointer-events-auto absolute top-3 right-3 z-10 origin-top-right transition-all duration-300 ease-out motion-reduce:transition-none ${
+                privateOpen
+                  ? "pointer-events-none -translate-y-1 scale-95 opacity-0"
+                  : "translate-y-0 scale-100 opacity-100"
+              }`}
+            >
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Open private space"
+                tabIndex={privateOpen ? -1 : undefined}
+                className="gap-2 shadow-md"
+                onClick={() => {
+                  setPrivateOpen(true);
+                }}
+              >
+                <User className="size-4" />
+                Private space
+                <span className="rounded border px-1 font-mono text-[10px] text-muted-foreground">
+                  C
+                </span>
+              </Button>
+            </div>
           </div>
         </ResizablePanel>
-        {privateOpen && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel
-              id="private"
-              defaultSize={privateSize}
-              minSize={360}
-              maxSize="50%"
-              className="min-w-0"
-            >
-              <CharacterSheetPanel
-                roomId={roomData.id}
-                role={roomData.role}
-                onClose={() => {
-                  setPrivateOpen(false);
-                }}
-              />
-            </ResizablePanel>
-          </>
-        )}
+        <ResizableHandle
+          withHandle
+          disabled={!privateOpen}
+          className={`transition-opacity duration-300 ease-out motion-reduce:transition-none ${
+            privateOpen ? "opacity-100" : "pointer-events-none opacity-0"
+          }`}
+        />
+        <ResizablePanel
+          id="private"
+          panelRef={privatePanelRef}
+          collapsible
+          collapsedSize={0}
+          defaultSize={privateSize}
+          minSize={360}
+          maxSize="50%"
+          className="min-w-0 transition-[flex-basis] duration-300 ease-out motion-reduce:transition-none"
+        >
+          <CharacterSheetPanel
+            roomId={roomData.id}
+            role={roomData.role}
+            open={privateOpen}
+            onClose={() => {
+              setPrivateOpen(false);
+            }}
+          />
+        </ResizablePanel>
       </ResizablePanelGroup>
     </div>
   );

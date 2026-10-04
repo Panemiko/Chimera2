@@ -78,6 +78,9 @@ fastify.register(fastifyTRPCPlugin, {
   trpcOptions: {
     router: appRouter,
     createContext,
+    // Lets the client send queries as POST (methodOverride), so large
+    // batches travel in the request body instead of the URL.
+    allowMethodOverride: true,
     onError({ path, error }) {
       console.error(`Error in tRPC handler on path '${path}':`, error);
     },

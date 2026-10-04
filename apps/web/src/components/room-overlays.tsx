@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSubscription } from "@trpc/tanstack-react-query";
-import { useRef, useState, useCallback } from "react";
+import { useMemo, useRef, useState, useCallback } from "react";
 
 import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/utils/trpc";
@@ -21,8 +21,32 @@ export default function RoomOverlays({ roomId, role }: { roomId: string; role: "
 
   const { data: session } = authClient.useSession();
   const myId = session?.user.id;
+  const queryClient = useQueryClient();
 
   const history = useQuery(trpc.events.list.queryOptions({ roomId }));
+  // Mesma queryKey do RosterPanel: compartilha o cache e serve de fonte
+  // da cor viva para recolorir o histórico de forma retroativa.
+  const members = useQuery({
+    ...trpc.characters.members.queryOptions({ roomId }),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
+  });
+
+  const myColor = (session?.user as { color?: string | null } | undefined)?.color ?? null;
+
+  const colorByUserId = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const m of members.data ?? []) {
+      map.set(m.userId, m.userColor ?? null);
+    }
+    if (session?.user?.id && myColor) {
+      // Otimista local: minha cor nova aparece sem esperar o refetch.
+      map.set(session.user.id, myColor);
+    }
+    return map;
+  }, [members.data, session?.user?.id, myColor]);
+  const colorRef = useRef(colorByUserId);
+  colorRef.current = colorByUserId;
 
   const dismissPopup = useCallback((id: number) => {
     setPopups((prev) => prev.filter((e) => e.id !== id));
@@ -46,6 +70,12 @@ export default function RoomOverlays({ roomId, role }: { roomId: string; role: "
       {
         onData: (envelope) => {
           const event = envelope.data as RoomEvent;
+          if (event.payload.kind === "member_joined") {
+            // Alguém entrou: a lista de players precisa refetch.
+            void queryClient.invalidateQueries({
+              queryKey: trpc.characters.members.queryKey(),
+            });
+          }
           if (event.payload.kind === "dice_roll") {
             // Dice wait for the 3D to settle (plus grace) before hitting history.
             if (animatedIds.current.has(event.id) || pendingDice.current.has(event.id)) return;
@@ -55,7 +85,10 @@ export default function RoomOverlays({ roomId, role }: { roomId: string; role: "
               setThreeRequest({
                 key: event.id,
                 groups: event.payload.groups,
-                color: event.payload.authorColor ?? "#555",
+                color:
+                  (event.actorId ? colorRef.current.get(event.actorId) : undefined) ??
+                  event.payload.authorColor ??
+                  "#555",
               });
             } else {
               // No animation for this viewer: release straight away.
@@ -85,8 +118,8 @@ export default function RoomOverlays({ roomId, role }: { roomId: string; role: "
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
-      <HistoryOverlay events={events} />
-      <DiceResultPopupStack popups={popups} onDismiss={dismissPopup} />
+      <HistoryOverlay events={events} colorByUserId={colorByUserId} />
+      <DiceResultPopupStack popups={popups} colorByUserId={colorByUserId} onDismiss={dismissPopup} />
       <div className="pointer-events-auto absolute bottom-3 right-3 flex w-64 flex-col gap-2">
         <RosterPanel roomId={roomId} />
         <DiceTray roomId={roomId} latestDice={latestDice} />

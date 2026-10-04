@@ -3,11 +3,11 @@
    hidden here. The zoom controls and undo/redo sit under the history
    overlay in the bottom-left, so they are hidden too. Keyboard still
    works: ctrl+wheel zooms, ctrl+z undoes. */
-.excalidraw .main-menu-trigger {
+.room-canvas .excalidraw .main-menu-trigger {
   display: none !important;
 }
 
-.excalidraw .sidebar-trigger {
+.room-canvas .excalidraw .sidebar-trigger {
   display: none !important;
 }
 
@@ -38,4 +38,12 @@
 
 .room-canvas .excalidraw .App-menu__left {
   max-height: calc(100vh - 24px - 334px - 12px) !important;
+}
+
+/* A grade de hexagonos e um overlay proprio atras do canvas do Excalidraw.
+   O fundo do Excalidraw precisa ser transparente para ela aparecer. */
+.room-canvas .excalidraw,
+.room-canvas .excalidraw-container,
+.room-canvas .excalidraw__canvas {
+  background: transparent !important;
 }
